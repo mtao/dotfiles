@@ -1,18 +1,18 @@
 {
   "mpris": {
-    "format": "{player_icon}",
-    "format-paused": "{status_icon}",
+    "format": "{player_icon}<sub>󰝚</sub>",
+    "format-paused": "{status_icon}<sub>󰝚</sub>",
     "player-icons": {
-      "default": "<span size='200%'></span>",
+      "default": "󰝚",
       "spotify": "",
-      "firefox": "<span size='200%'>󰈹</span>",
-      "chrome": "<span size='200%'></span>",
-      "chromium": "<span size='200%'></span>"
+      "firefox": "󰈹",
+      "chrome": "",
+      "chromium": ""
     },
     "status-icons": {
       "stopped": "󰓛",
-      "paused": "⏸",
-      "playing": "▶"
+      "paused": "󰏤",
+      "playing": "󰐊"
     },
     "on-click": "playerctld shift",
     "on-click-right": "playerctld unshift",
