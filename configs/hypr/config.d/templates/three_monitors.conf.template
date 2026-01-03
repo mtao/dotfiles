@@ -1,0 +1,10 @@
+$leftMonitor = {{ left_monitor.name }}
+$centerMonitor = {{ center_monitor.name }}
+$bottomMonitor = {{ bottom_monitor.name }}
+
+monitor = $centerMonitor, preferred,0x0,1,vrr,1
+monitor = $leftMonitor,preferred,-{{ left_monitor.width }}x0,1
+monitor = $bottomMonitor,preferred,0x{{ center_monitor.height }},1
+$monitor0 = $bottomMonitor
+$monitor1 = $centerMonitor
+$monitor2 = $leftMonitor

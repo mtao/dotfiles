@@ -4,7 +4,7 @@
 # if conan is present then the profile chosen is the conan profile, otherwise it's the build system's profile type
 
 
-if [ -f conanfile.txt || -f conanfile.txt ]
+if [[ -f conanfile.py || -f conanfile.txt ]]
 then
     echo "Found conan"
     USE_CONAN=1
@@ -14,7 +14,7 @@ fi
 
 
 function init_cmake() {
-    if USE_CONAN; then
+    if [[ ${USE_CONAN} == 1 ]]; then
         CONAN_CMD="-DCMAKE_TOOLCHAIN_FILE=conan/conan_toolchain.cmake"
         BUILD_TYPE=$( cat $( conan profile path "$1" ) | grep build_type | tr "=" " " | awk '{ print $2 }' )
     else
@@ -25,7 +25,7 @@ function init_cmake() {
 }
 
 function init_meson() {
-    if USE_CONAN; then
+    if [[ ${USE_CONAN} == 1 ]]; then
         CONAN_CMD="--native-file conan/conan_meson_native.ini"
     else
         CONAN_CMD=""
@@ -40,15 +40,16 @@ function run() {
 
     mkdir -p $build_folder
 
-    if USE_CONAN; then
+    echo ${USE_CONAN}
+    if [[ ${USE_CONAN} == 1 ]]; then
     conan install . --output-folder=$build_folder/conan --build=missing --profile=$profile
     fi
 
     pushd $build_folder
 
-    if [ -f meson.build ] then
+    if [[ -f ../meson.build ]] then
         init_meson
-    elif [ -f CMakeLists.txt ] then
+    elif [[ -f ../CMakeLists.txt ]] then
         init_cmake
 
     else

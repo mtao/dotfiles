@@ -1,0 +1,174 @@
+# System
+sys-fs/dosfstools
+sys-kernel/genkernel
+sys-kernel/gentoo-sources
+sys-kernel/linux-firmware
+sys-boot/grub
+sys-boot/os-prober
+sys-boot/plymouth
+app-admin/metalog
+sys-auth/fprintd # fingerprint daemon
+sys-fs/cryptsetup # Encrypted drive management
+
+# TODO: figure out whether i need both
+net-misc/chrony
+sys-process/cronie
+
+# System utils
+app-admin/eclean-kernel
+app-admin/sudo
+sys-apps/usbutils
+sys-block/gparted
+sys-process/btop
+sys-apps/amdgpu_top
+app-portage/eix
+app-portage/gentoolkit
+app-shells/gentoo-zsh-completions
+net-analyzer/nmap
+net-analyzer/traceroute
+net-analyzer/wireshark
+net-dns/bind-tools
+net-fs/autofs
+net-fs/cifs-utils
+net-fs/nfs-utils
+net-misc/keychain
+net-misc/networkmanager
+net-misc/rclone
+net-misc/telnet-bsd
+net-misc/wol
+sys-apps/dmidecode
+sys-apps/ethtool
+sys-apps/flatpak
+sys-apps/fwupd
+sys-apps/lm-sensors
+sys-apps/lshw
+sys-apps/mlocate
+sys-apps/moreutils
+sys-apps/pciutils
+sys-apps/portage
+dev-python/pip
+
+# Environment
+app-shells/zsh
+app-shells/zsh-completions
+app-shells/zsh-syntax-highlighting
+
+# Fonts
+media-fonts/fontawesome
+media-fonts/inconsolata
+media-fonts/noto-cjk
+media-fonts/noto-emoji
+media-fonts/symbols-nerd-font
+
+# General
+app-editors/neovim
+app-misc/tmux
+net-misc/yt-dlp
+sys-apps/bat
+
+# Development
+sys-devel/gcc
+dev-lang/rust-bin
+llvm-core/clang
+dev-build/meson
+
+
+# Development libraries
+dev-cpp/catch # unit testing
+dev-cpp/nlohmann_json # json parsing
+dev-cpp/tbb # multithreading
+dev-libs/protobuf # serialization
+dev-libs/spdlog # logging
+
+## Graphics related
+media-gfx/alembic # graphics file format
+
+## Visualization
+media-libs/glfw
+media-libs/shaderc
+dev-util/vulkan-headers
+dev-util/vulkan-tools
+media-libs/vulkan-layers
+media-libs/vulkan-loader
+
+dev-python/beautifulsoup4
+dev-python/pandas
+dev-python/pytest
+dev-python/tables
+
+
+# Development utils
+app-eselect/eselect-python
+app-eselect/eselect-repository
+dev-debug/valgrind
+app-misc/jq
+dev-util/ccache
+dev-util/conan
+dev-util/ctags
+dev-util/fq
+dev-util/github-cli
+dev-util/meld
+dev-vcs/git
+dev-vcs/git-lfs
+sys-apps/ripgrep
+
+
+# Writing
+app-text/texlive
+dev-tex/biblatex
+dev-texlive/texlive-bibtexextra
+dev-texlive/texlive-fontsextra
+dev-texlive/texlive-mathscience
+dev-texlive/texlive-publishers
+dev-texlive/texlive-xetex
+
+
+# Desktop environment
+gui-wm/hyprland
+gui-libs/xdg-desktop-portal-wlr
+
+gui-apps/grim # screenshot
+gui-apps/slurp # region selection (for screenshotting with grim)
+gui-apps/mako # notification
+gui-apps/waybar # task bar
+gui-apps/wl-clipboard # clipboard
+
+kde-apps/dolphin # GUI file manager
+kde-apps/dolphin-plugins-dropbox
+kde-apps/dolphin-plugins-git
+kde-apps/dolphin-plugins-mercurial
+kde-apps/dolphin-plugins-subversion
+kde-apps/ffmpegthumbs #thumbnails in dolphin
+
+kde-apps/filelight # disk utilization visualizer
+kde-apps/gwenview # image viewer
+kde-apps/kdenlive # video editor
+kde-apps/konsole # kde-friendly terminal
+kde-apps/okular # pdf viewer
+kde-apps/thumbnailers # metapackage for thumbnail generation in kde
+kde-frameworks/kdesu # GUI sudo requester
+media-sound/pavucontrol-qt # audio mixer
+media-sound/playerctl # cmdline control of media
+media-video/mpv # media player
+
+
+www-client/google-chrome # default editor :(
+gui-apps/1password # password manager
+net-im/slack # chat on slack
+net-im/signal-desktop-bin # chat on signal
+x11-terms/wezterm # terminal
+
+# Image editing
+media-gfx/imagemagick # cmdline image processing/library
+media-gfx/inkscape # vector graphics editor
+
+
+
+x11-misc/rofi # window switcher / app runner
+x11-misc/sddm # KDE-based display manager
+
+
+# laptop power
+sys-power/acpid
+sys-power/thermald
+sys-power/tlp

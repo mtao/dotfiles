@@ -1,0 +1,16 @@
+#$leftMonitor = HDMI-A-1
+#$centerMonitor = DP-11
+#$rightMonitor = eDP-1
+$laptopMonitor = {{ laptop_monitor.name }}
+$leftMonitor = {{ left_monitor.name }}
+
+# monitor = $leftMonitor,preferred,0x0,1
+# monitor = $centerMonitor,preferred,1920x0,1
+# monitor = $rightMonitor,preferred,5760x0,1
+#monitor = $laptopMonitor,preferred,0x0,1
+monitor = $laptopMonitor, preferred,0x0,1,vrr,1
+#monitor = $rightMonitor,preferred,{{ laptop_monitor.width }}x0,1
+monitor = $leftMonitor,preferred,-{{ left_monitor.width }}x0,1
+$monitor0 = $laptopMonitor
+$monitor1 = $leftMonitor
+#$monitor1 = $rightMonitor
