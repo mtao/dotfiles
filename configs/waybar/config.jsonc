@@ -1,0 +1,26 @@
+{
+  "include": [
+    "modules/*.jsonc",
+    "modules/hyprland/*.jsonc"
+  ],
+  "layer": "top",
+  "position": "top",
+  "ipc": true,
+  "modules-left": [
+    "clock",
+    "hyprland/workspaces",
+    "hyprland/submap"
+  ],
+  "modules-center": [
+    "hyprland/window"
+  ],
+  "modules-right": [
+    "mpris",
+    "wireplumber",
+    "bluetooth",
+    "network",
+    "backlight",
+    "battery",
+    "tray"
+  ]
+}

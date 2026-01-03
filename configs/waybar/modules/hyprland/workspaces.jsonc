@@ -1,0 +1,11 @@
+
+{
+    "hyprland/workspaces": {
+        "format": "{name}",
+        "show-special": true,
+        "special-visible-only": true,
+        "visible-only": true,
+        "all-outputs": false,
+        "disable-scroll": true
+    }
+}

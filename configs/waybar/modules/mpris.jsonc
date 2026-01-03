@@ -1,0 +1,21 @@
+{
+  "mpris": {
+    "format": "{player_icon}",
+    "format-paused": "{status_icon}",
+    "player-icons": {
+      "default": "<span size='200%'></span>",
+      "spotify": "",
+      "firefox": "<span size='200%'>󰈹</span>",
+      "chrome": "<span size='200%'></span>",
+      "chromium": "<span size='200%'></span>"
+    },
+    "status-icons": {
+      "stopped": "󰓛",
+      "paused": "⏸",
+      "playing": "▶"
+    },
+    "on-click": "playerctld shift",
+    "on-click-right": "playerctld unshift",
+    "max-length": 50
+  }
+}

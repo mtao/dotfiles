@@ -1,0 +1,9 @@
+{
+    "backlight": {
+        // "device": "acpi_video1",
+    "format": "<span size='200%'>{icon}</span>",
+    "tooltip": true,
+    "tooltip-format": "{percent}%",
+    "format-icons": ["", "", "", "", "", "", "", "", ""]
+    }
+}
