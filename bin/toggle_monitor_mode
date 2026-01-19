@@ -1,87 +1,90 @@
 #!/bin/bash
 
-
-
-MONITORS=$( hyprctl monitors all -j )
+MONITORS=$(hyprctl monitors all -j)
 
 detect_monitor() {
-        echo $MONITORS | jq --arg SERIAL "$2" --arg MODEL "$1" '.[] | select( .serial == $SERIAL and .model == $MODEL )'
+  echo $MONITORS | jq --arg SERIAL "$2" --arg MODEL "$1" '.[] | select( .serial == $SERIAL and .model == $MODEL )'
 }
 
 get_name() {
-    echo "$1" | jq -r '.name'
+  echo "$1" | jq -r '.name'
 }
 
-builtin=$( detect_monitor "NE135A1M-NY1" "" )
+builtin=$(detect_monitor "NE135A1M-NY1" "")
 # old laptop monitor
 #builtin=$( detect_monitor "0x095F" "" )
-office_lg=$( detect_monitor "LG HDR 4K" 207NTZN77253 )
-office_dell=$( detect_monitor "DELL P2722H"  114V1M3 )
-gn950=$( detect_monitor "27GN950" 111NTHMH2169 )
-culmer_small_dell=$( detect_monitor "DELL P2014H" "J6HFT44BCNPL" )
+office_lg=$(detect_monitor "LG HDR 4K" 207NTZN77253)
+office_dell=$(detect_monitor "DELL P2722H" 114V1M3)
+gn950=$(detect_monitor "27GN950" 111NTHMH2169)
+culmer_small_dell=$(detect_monitor "DELL P2014H" "J6HFT44BCNPL")
 
-
+culmer_dell_2k=$(detect_monitor "HP ENVY 32" "CNC5230X96")
 # nicole
 #office_lg=$( detect_monitor "LG HDR 4K"  0x00049EDF )
 
 # salesforce
 #salesforce=$( detect_monitor "DELL U3425WE"  H0JP3Z3 )
 
-for name in builtin office_lg office_dell gn950 culmer_small_dell;
-do
-    echo ${name} ${!name}
-    if [[ -n "${!name}" ]] then
-        myname=$( echo "${!name}" | jq -r '.name' )
-        mymodel=$( echo "${!name}" | jq -r '.model' )
-        hyprctl notify -1 10000 "rgb(ff0000)" "Found $mymodel at $myname"
-    fi
+for name in builtin office_lg office_dell gn950 culmer_small_dell culmer_dell_2k; do
+  echo ${name} ${!name}
+  if [[ -n "${!name}" ]]; then
+    myname=$(echo "${!name}" | jq -r '.name')
+    mymodel=$(echo "${!name}" | jq -r '.model')
+    hyprctl notify -1 10000 "rgb(ff0000)" "Found $mymodel at $myname"
+  fi
 
 done
-
 
 . ~/.local/venv/bin/activate
 
 pushd ~/.config/hypr/config.d
 
-tmpfile=$( mktemp /tmp/toggle.XXXX )
+tmpfile=$(mktemp /tmp/toggle.XXXX)
 
 three_monitors_template="templates/three_monitors.conf.template"
 vertical_monitors_template="templates/vertical_monitors.conf.template"
 horizontal_monitors_template="templates/horizontal_monitors.conf.template"
 
-if [[  -n "$office_lg"  &&  -n "$builtin"  && -n "$office_dell"  ]]
-then
-    echo "{
-        \"left_monitor\":${office_dell},\"center_monitor\":${office_lg},\"bottom_monitor\":${builtin}}" > ${tmpfile}
+if [[ -n "$office_lg" && -n "$builtin" && -n "$office_dell" ]]; then
+  echo "{
+        \"left_monitor\":${office_dell},\"center_monitor\":${office_lg},\"bottom_monitor\":${builtin}}" >${tmpfile}
 
-    template=${three_monitors_template}
-    hyprctl notify -1 10000 "rgb(ff0000)" "Office 3 monitor setup enabled"
+  template=${three_monitors_template}
+  hyprctl notify -1 10000 "rgb(ff0000)" "Office 3 monitor setup enabled"
 
-elif [[ -n "$builtin"  && -n "$office_lg" ]] then
-    template=${vertical_monitors_template}
-    echo "{
+elif [[ -n "$builtin" && -n "$office_lg" ]]; then
+  template=${vertical_monitors_template}
+  echo "{
         \"upper_monitor\":${office_lg},
-        \"laptop_monitor\":${builtin}}" > ${tmpfile}
-    hyprctl notify -1 10000 "rgb(ff0000)" "Monitor over laptop enabled"
-elif [[ -n "$builtin"  && -n "$gn950" ]] then
-    echo "{
+        \"laptop_monitor\":${builtin}}" >${tmpfile}
+  hyprctl notify -1 10000 "rgb(ff0000)" "Monitor over laptop enabled"
+elif [[ -n "$builtin" && -n "$gn950" ]]; then
+  echo "{
         \"right_monitor\":${gn950},
-        \"laptop_monitor\":${builtin}}" > ${tmpfile}
-    template=${horizontal_monitors_template}
-    hyprctl notify -1 10000 "rgb(ff0000)" "Monitor next to laptop enabled"
-elif [[ -n "$builtin"  && -n "$culmer_small_dell" ]] then
-    echo "{
+        \"laptop_monitor\":${builtin}}" >${tmpfile}
+  template=${horizontal_monitors_template}
+  hyprctl notify -1 10000 "rgb(ff0000)" "Monitor next to laptop enabled"
+
+elif [[ -n "$culmer_dell_2k" && -n "$culmer_small_dell" ]]; then
+  echo "{
         \"left_monitor\":${culmer_small_dell},
         \"right_monitor\": {},
-        \"laptop_monitor\":${builtin}}" > ${tmpfile}
-    template=${horizontal_monitors_template}
-    hyprctl notify -1 10000 "rgb(ff0000)" "Monitor next to laptop enabled"
-elif [[ -n "$builtin"  && -n "$salesforce" ]] then
-    echo "{\"upper_monitor\":${salesforce},\"laptop_monitor\":${builtin}}" > ${tmpfile}
-    template=${vertical_monitors_template}
-    hyprctl notify -1 10000 "rgb(ff0000)" "Monitor over laptop enabled"
-else 
-    hyprctl notify -1 10000 "rgb(ff0000)" "Default laptop mode enabled"
+        \"laptop_monitor\":${culmer_dell_2k}}" >${tmpfile}
+  template=${horizontal_monitors_template}
+  hyprctl notify -1 10000 "rgb(ff0000)" "Monitor next to laptop enabled"
+elif [[ -n "$builtin" && -n "$culmer_small_dell" ]]; then
+  echo "{
+        \"left_monitor\":${culmer_small_dell},
+        \"right_monitor\": {},
+        \"laptop_monitor\":${builtin}}" >${tmpfile}
+  template=${horizontal_monitors_template}
+  hyprctl notify -1 10000 "rgb(ff0000)" "Monitor next to laptop enabled"
+elif [[ -n "$builtin" && -n "$salesforce" ]]; then
+  echo "{\"upper_monitor\":${salesforce},\"laptop_monitor\":${builtin}}" >${tmpfile}
+  template=${vertical_monitors_template}
+  hyprctl notify -1 10000 "rgb(ff0000)" "Monitor over laptop enabled"
+else
+  hyprctl notify -1 10000 "rgb(ff0000)" "Default laptop mode enabled"
 fi
 jinja -o monitors.conf -d ${tmpfile} -f json ${template}
 #rm ${tmpfile}
