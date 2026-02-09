@@ -1,0 +1,16 @@
+help:
+CompileFlags:
+    Add: [ -xc++, -std=c++26 ]
+Index:
+    Background: Build
+
+Diagnostics:
+  ClangTidy:
+    Add: modernize* 
+    Add: performance*
+    Add: portability*
+    Add: readability*
+  UnusedIncludes: Strict
+
+Hover:
+  ShowAKA: Yes

@@ -2,6 +2,7 @@
   "mpris": {
     "format": "{player_icon}<sub>󰝚</sub>",
     "format-paused": "{status_icon}<sub>󰝚</sub>",
+    "tooltip-format": "{dynamic}",
     "player-icons": {
       "default": "󰝚",
       "spotify": "",

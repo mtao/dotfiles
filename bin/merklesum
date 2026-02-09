@@ -1,0 +1,83 @@
+#!/bin/bash
+
+set -euo pipefail
+
+DEFAULT_DEPTH=0
+DEFAULT_SUM="sha256sum"
+
+usage() {
+    echo "Usage: $0 [-d depth] [-s checksum_cmd] [directory]"
+    echo "  -d depth        Maximum recursion depth, 0=infinite (default: $DEFAULT_DEPTH)"
+    echo "  -s checksum_cmd Checksum command to use (default: $DEFAULT_SUM)"
+    echo "  directory       Directory to hash (default: current directory)"
+    exit 1
+}
+
+merkle_hash() {
+    local path="$1"
+    local depth="$2"
+    local sum_cmd="$3"
+    
+    local next_depth
+    if [ "$depth" -gt 0 ]; then
+        if [ "$depth" -eq 1 ]; then
+            echo "max-depth-reached"
+            return 0
+        fi
+        next_depth=$((depth - 1))
+    else
+        next_depth=0
+    fi
+    
+    if [ -f "$path" ]; then
+        "$sum_cmd" "$path" | awk '{print $1}'
+    elif [ -d "$path" ]; then
+        local entries=$(find "$path" -mindepth 1 -maxdepth 1 | sort)
+        
+        if [ -z "$entries" ]; then
+            printf '%s' "empty-dir" | "$sum_cmd" | awk '{print $1}'
+        else
+            local hash_input=""
+            while IFS= read -r entry; do
+                if [ -n "$entry" ]; then
+                    local entry_name=$(basename "$entry")
+                    local entry_hash=$(merkle_hash "$entry" "$next_depth" "$sum_cmd")
+                    hash_input+="${entry_hash} ${entry_name}"$'\n'
+                fi
+            done <<< "$entries"
+            
+            printf '%s' "$hash_input" | "$sum_cmd" | awk '{print $1}'
+        fi
+    else
+        echo "unknown-type"
+        return 1
+    fi
+}
+
+DEPTH=$DEFAULT_DEPTH
+SUM_CMD=$DEFAULT_SUM
+
+while getopts "d:s:h" opt; do
+    case $opt in
+        d) DEPTH=$OPTARG ;;
+        s) SUM_CMD=$OPTARG ;;
+        h) usage ;;
+        *) usage ;;
+    esac
+done
+
+shift $((OPTIND - 1))
+
+TARGET_DIR="${1:-.}"
+
+if ! command -v "$SUM_CMD" &> /dev/null; then
+    echo "Error: Checksum command '$SUM_CMD' not found" >&2
+    exit 1
+fi
+
+if ! [[ "$DEPTH" =~ ^[0-9]+$ ]]; then
+    echo "Error: Depth must be a non-negative integer" >&2
+    exit 1
+fi
+
+merkle_hash "$TARGET_DIR" "$DEPTH" "$SUM_CMD"

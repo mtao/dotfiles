@@ -7,14 +7,14 @@
   "position": "top",
   "ipc": true,
   "modules-left": [
-    "hyprland/window"
+    "hyprland/window",
+    "hyprland/workspaces",
+    "hyprland/submap"
   ],
   "modules-center": [
     "clock"
   ],
   "modules-right": [
-    "hyprland/submap",
-    "hyprland/workspaces",
     "mpris",
     "wireplumber",
     "bluetooth",

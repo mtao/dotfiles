@@ -10,11 +10,17 @@
     "-format-linked": "{ifname} (No IP) ",
     "-format-disconnected": "Disconnected ⚠",
     "tooltip-format": "{ifname}: {ipaddr}/{cidr} via {gwaddr} ",
-    "format-icons": [
-      "󰤟",
-      "󰤢",
-      "󰤥",
-      "󰤨"
-    ]
+    "format-icons": {
+      "wifi": [
+        "󰤯",
+        "󰤟",
+        "󰤢",
+        "󰤥",
+        "󰤨"
+      ],
+      "ethernet": "󰌘",
+      "disconnected": "󰌙",
+      "linked": "󰌚"
+    }
   }
 }

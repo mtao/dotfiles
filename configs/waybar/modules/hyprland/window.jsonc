@@ -1,11 +1,14 @@
 {
     "hyprland/window": {
-        "format": "{title}",
+        "format": "",
+        "tooltip": "true",
+        "tooltip-format": "{title}",
         "icon": true,
         "rewrite": {
             "(.*) — Mozilla Firefox": "$1",
             "(.*) - Google Chrome": "$1"
         },
+        "separate-outputs": true,
         "icon-size": "16"
     }
 }
