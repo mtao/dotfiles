@@ -1,90 +1,312 @@
-#!/bin/bash
+#!/usr/bin/env python3
+"""
+toggle_monitor_mode.py - Automatically configures Hyprland monitor layouts based on connected displays.
 
-MONITORS=$(hyprctl monitors all -j)
+This script detects connected monitors and applies the appropriate workspace configuration
+from YAML config files.
+"""
 
-detect_monitor() {
-  echo $MONITORS | jq --arg SERIAL "$2" --arg MODEL "$1" '.[] | select( .serial == $SERIAL and .model == $MODEL )'
-}
+import argparse
+import os
+import sys
+import json
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Dict, List, Optional, Any
 
-get_name() {
-  echo "$1" | jq -r '.name'
-}
+import yaml
+import jinja2
+from hyprpy import Hyprland
+from hyprpy.components.monitors import Monitor
 
-builtin=$(detect_monitor "NE135A1M-NY1" "")
-# old laptop monitor
-#builtin=$( detect_monitor "0x095F" "" )
-nyu_office_lg=$(detect_monitor "LG HDR 4K" 207NTZN77253)
-nyu_office_dell=$(detect_monitor "DELL P2722H" 114V1M3)
-gn950=$(detect_monitor "27GN950" 111NTHMH2169)
-home_lg=$(detect_monitor "LG HDR 4K" 0x00023298)
-culmer_small_dell=$(detect_monitor "DELL P2014H" "J6HFT44BCNPL")
 
-# nicole
-#office_lg=$( detect_monitor "LG HDR 4K"  0x00049EDF )
+# Configuration paths
+SCRIPT_DIR = Path(__file__).parent.resolve()
+REPO_ROOT = SCRIPT_DIR.parent
+CONFIG_DIR = Path.home() / ".config" / "hypr" / "config.d"
+TEMPLATES_DIR = REPO_ROOT / "configs" / "displays" / "templates"
+MONITORS_YAML = REPO_ROOT / "configs" / "displays" / "monitors.yaml"
+WORKSPACES_YAML = REPO_ROOT / "configs" / "displays" / "workspaces.yaml"
 
-# salesforce
-#salesforce=$( detect_monitor "DELL U3425WE"  H0JP3Z3 )
 
-for name in builtin home_lg gn950 culmer_small_dell; do
-  echo ${name} ${!name}
-  if [[ -n "${!name}" ]]; then
-    myname=$(echo "${!name}" | jq -r '.name')
-    mymodel=$(echo "${!name}" | jq -r '.model')
-    hyprctl notify -1 10000 "rgb(ff0000)" "Found $mymodel at $myname"
-  fi
+def load_yaml(path: Path) -> Dict[str, Any]:
+    """Load a YAML file and return its contents."""
+    with open(path, 'r') as f:
+        return yaml.safe_load(f)
 
-done
 
-. ~/.local/venvs/default/bin/activate
+def get_connected_monitors() -> List[Monitor]:
+    """Get all currently connected monitors using hyprpy."""
+    instance = Hyprland()
+    return instance.get_monitors()
 
-pushd ~/.config/hypr/config.d
 
-tmpfile=$(mktemp /tmp/toggle.XXXX)
+def match_monitor(monitor: Monitor, configured_monitors: Dict[str, Dict]) -> Optional[str]:
+    """
+    Match a connected monitor to a configured monitor by model and serial.
+    Returns the configured monitor ID if matched, None otherwise.
+    """
+    for monitor_id, config in configured_monitors.items():
+        model_match = config.get('model') == monitor.model
+        serial = config.get('serial')
+        
+        # If serial is null/None in config, match only by model
+        # Otherwise match both model and serial
+        if serial is None or serial == "":
+            if model_match:
+                return monitor_id
+        else:
+            if model_match and str(serial) == str(monitor.serial):
+                return monitor_id
+    
+    return None
 
-three_monitors_template="templates/three_monitors.conf.template"
-vertical_monitors_template="templates/vertical_monitors.conf.template"
-horizontal_monitors_template="templates/horizontal_monitors.conf.template"
 
-if [[ -n "$home_lg" && -n "$builtin" && -n "$gn950" ]]; then
-  echo "{
-        \"center_monitor\":${gn950},\"right_monitor\":${home_lg},\"bottom_monitor\":${builtin}}" >${tmpfile}
+def find_matching_workspace(
+    connected_monitor_ids: List[str],
+    workspaces: Dict[str, Dict]
+) -> Optional[tuple[str, Dict]]:
+    """
+    Find the best matching workspace configuration for the connected monitors.
+    Returns tuple of (workspace_name, workspace_config) or None if no match.
+    """
+    connected_set = set(connected_monitor_ids)
+    
+    # Sort workspaces by number of monitors (descending) to prefer multi-monitor setups
+    sorted_workspaces = sorted(
+        workspaces.items(),
+        key=lambda x: len(x[1].get('monitors', [])),
+        reverse=True
+    )
+    
+    for workspace_name, workspace_config in sorted_workspaces:
+        required_monitors = set(workspace_config.get('monitors', []))
+        
+        # Check if all required monitors for this workspace are connected
+        if required_monitors.issubset(connected_set):
+            return (workspace_name, workspace_config)
+    
+    return None
 
-  template=${three_monitors_template}
-  hyprctl notify -1 10000 "rgb(ff0000)" "Home 3 monitor setup enabled"
 
-elif [[ -n "$office_lg" && -n "$builtin" && -n "$office_dell" ]]; then
-  echo "{
-        \"left_monitor\":${office_dell},\"center_monitor\":${office_lg},\"bottom_monitor\":${builtin}}" >${tmpfile}
+def get_monitor_settings(configured_monitors: Dict[str, Dict], monitor_id: str) -> Dict[str, Any]:
+    """Get settings for a monitor from configuration.
+    
+    Settings are optional - only specified settings override defaults.
+    mode: "preferred" or "WIDTHxHEIGHT[@REFRESH_RATE]" (e.g., "3840x2160@144")
+    vrr: true/false (default: false)
+    scale: float (default: 1.0)
+    """
+    config = configured_monitors.get(monitor_id, {})
+    settings = config.get('settings', {})
+    
+    # Start with defaults
+    result = {
+        'mode': 'preferred',
+        'vrr': False,
+        'scale': 1.0,
+    }
+    
+    # Override with any specified settings
+    if 'mode' in settings:
+        result['mode'] = settings['mode']
+    if 'vrr' in settings:
+        result['vrr'] = settings['vrr']
+    if 'scale' in settings:
+        result['scale'] = settings['scale']
+    
+    return result
 
-  template=${three_monitors_template}
-  hyprctl notify -1 10000 "rgb(ff0000)" "Office 3 monitor setup enabled"
 
-elif [[ -n "$builtin" && -n "$office_lg" ]]; then
-  template=${vertical_monitors_template}
-  echo "{
-        \"upper_monitor\":${office_lg},
-        \"laptop_monitor\":${builtin}}" >${tmpfile}
-  hyprctl notify -1 10000 "rgb(ff0000)" "Monitor over laptop enabled"
-elif [[ -n "$builtin" && -n "$gn950" ]]; then
-  echo "{
-        \"right_monitor\":${gn950},
-        \"laptop_monitor\":${builtin}}" >${tmpfile}
-  template=${horizontal_monitors_template}
-  hyprctl notify -1 10000 "rgb(ff0000)" "Monitor next to laptop enabled"
-elif [[ -n "$builtin" && -n "$culmer_small_dell" ]]; then
-  echo "{
-        \"left_monitor\":${culmer_small_dell},
-        \"right_monitor\": {},
-        \"laptop_monitor\":${builtin}}" >${tmpfile}
-  template=${horizontal_monitors_template}
-  hyprctl notify -1 10000 "rgb(ff0000)" "Monitor next to laptop enabled"
-elif [[ -n "$builtin" && -n "$salesforce" ]]; then
-  echo "{\"upper_monitor\":${salesforce},\"laptop_monitor\":${builtin}}" >${tmpfile}
-  template=${vertical_monitors_template}
-  hyprctl notify -1 10000 "rgb(ff0000)" "Monitor over laptop enabled"
-else
-  hyprctl notify -1 10000 "rgb(ff0000)" "Default laptop mode enabled"
-fi
-echo $template
-jinja -o monitors.conf -d ${tmpfile} -f json ${template}
-#rm ${tmpfile}
+def render_template(
+    template_name: str,
+    variables: Dict[str, Any],
+    monitors: Dict[str, Monitor],
+    monitor_id_map: Dict[str, str],
+    configured_monitors: Dict[str, Dict]
+) -> str:
+    """
+    Render a Jinja2 template with the given variables.
+
+    variables: Maps template variable names to monitor config IDs
+    monitors: Maps monitor config IDs to actual Monitor objects
+    configured_monitors: Monitor configuration from YAML
+    """
+    template_path = TEMPLATES_DIR / template_name
+
+    with open(template_path, 'r') as f:
+        template_content = f.read()
+
+    template = jinja2.Template(template_content)
+
+    # Build the context for the template
+    context = {}
+    for var_name, monitor_id in variables.items():
+        if monitor_id is None:
+            # Handle null monitors (e.g., right_monitor: null)
+            context[var_name] = {
+                "name": "",
+                "width": 0,
+                "height": 0,
+                "mode": "preferred",
+                "vrr": False,
+                "scale": 1.0,
+            }
+        elif monitor_id in monitors:
+            monitor = monitors[monitor_id]
+            settings = get_monitor_settings(configured_monitors, monitor_id)
+            context[var_name] = {
+                "name": monitor.name,
+                "width": monitor.width,
+                "height": monitor.height,
+                **settings
+            }
+        else:
+            # Monitor not connected but referenced - use empty values
+            settings = get_monitor_settings(configured_monitors, monitor_id)
+            context[var_name] = {
+                "name": "",
+                "width": 0,
+                "height": 0,
+                **settings
+            }
+
+    return template.render(**context)
+
+
+def hyprctl_notify(message: str, color: str = "ff0000"):
+    """Send a notification using hyprctl."""
+    try:
+        subprocess.run(
+            ["hyprctl", "notify", "-1", "10000", f"rgb({color})", message],
+            check=True,
+            capture_output=True
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to send notification: {e}", file=sys.stderr)
+
+
+def apply_monitor_config(config_content: str):
+    """Apply the generated monitor configuration to Hyprland."""
+    output_path = CONFIG_DIR / "monitors.conf"
+    
+    with open(output_path, 'w') as f:
+        f.write(config_content)
+    
+    # Reload Hyprland config
+    try:
+        subprocess.run(
+            ["hyprctl", "reload"],
+            check=True,
+            capture_output=True
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to reload Hyprland config: {e}", file=sys.stderr)
+
+
+def main():
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="Automatically configure Hyprland monitor layouts based on connected displays."
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without applying changes"
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Show detailed output"
+    )
+    args = parser.parse_args()
+    
+    # Load configuration files
+    try:
+        monitors_config = load_yaml(MONITORS_YAML)
+        workspaces_config = load_yaml(WORKSPACES_YAML)
+    except FileNotFoundError as e:
+        print(f"Error: Could not load configuration file: {e}", file=sys.stderr)
+        sys.exit(1)
+    
+    configured_monitors = monitors_config.get('monitors', {})
+    workspaces = workspaces_config.get('workspaces', {})
+    
+    if args.verbose:
+        print(f"Loaded {len(configured_monitors)} monitor configurations")
+        print(f"Loaded {len(workspaces)} workspace configurations")
+    
+    # Get connected monitors
+    try:
+        connected = get_connected_monitors()
+    except Exception as e:
+        print(f"Error: Failed to get connected monitors: {e}", file=sys.stderr)
+        sys.exit(1)
+    
+    print(f"Connected monitors:")
+    for m in connected:
+        print(f"  - {m.name}: model={m.model}, serial={m.serial}")
+    
+    # Match connected monitors to configured monitors
+    connected_monitor_ids = []
+    monitor_objects = {}  # Maps config ID to Monitor object
+    
+    for monitor in connected:
+        matched_id = match_monitor(monitor, configured_monitors)
+        if matched_id:
+            connected_monitor_ids.append(matched_id)
+            monitor_objects[matched_id] = monitor
+            print(f"  Matched: {monitor.name} -> {matched_id} ({configured_monitors[matched_id]['name']})")
+        else:
+            print(f"  Unmatched: {monitor.name} (model={monitor.model}, serial={monitor.serial})")
+    
+    # Find matching workspace
+    result = find_matching_workspace(connected_monitor_ids, workspaces)
+    
+    if result:
+        workspace_name, workspace_config = result
+        description = workspace_config.get('description', workspace_name)
+        template = workspace_config.get('template', 'laptop_default.conf.template')
+        variables = workspace_config.get('variables', {})
+        
+        print(f"\nSelected workspace: {workspace_name} ({description})")
+        print(f"Template: {template}")
+        
+        # Render the template
+        config_content = render_template(template, variables, monitor_objects, {}, configured_monitors)
+        
+        if args.dry_run:
+            print("\n--- Dry run mode - would apply the following configuration: ---")
+            print(config_content)
+            print("--- End of configuration ---")
+        else:
+            # Apply configuration
+            apply_monitor_config(config_content)
+            
+            # Notify user
+            hyprctl_notify(f"{description} enabled")
+            
+            print(f"Configuration applied successfully.")
+    else:
+        # Default to laptop mode
+        default_workspace = workspaces.get('default_laptop')
+        if default_workspace:
+            template = default_workspace.get('template', 'laptop_default.conf.template')
+            variables = default_workspace.get('variables', {})
+            config_content = render_template(template, variables, monitor_objects, {}, configured_monitors)
+            
+            if args.dry_run:
+                print("\n--- Dry run mode - would apply default laptop configuration: ---")
+                print(config_content)
+                print("--- End of configuration ---")
+            else:
+                apply_monitor_config(config_content)
+        
+        if not args.dry_run:
+            hyprctl_notify("Default laptop mode enabled")
+        print("No matching workspace found. Applied default laptop mode.")
+
+
+if __name__ == "__main__":
+    main()

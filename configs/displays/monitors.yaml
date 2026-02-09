@@ -1,0 +1,61 @@
+monitors:
+  framework_screen:
+    name: "Framework Screen"
+    model: "NE135A1M-NY1"
+    serial: null
+    settings:
+      mode: "preferred"
+      vrr: true
+
+  old_framework_screen:
+    name: "Old Framework Screen"
+    model: "0x095F"
+    serial: null
+
+  office_lg:
+    name: "Office LG"
+    model: "LG HDR 4K"
+    serial: "207NTZN77253"
+
+  office_dell:
+    name: "Office Dell"
+    model: "DELL P2722H"
+    serial: "114V1M3"
+
+  home_gn950:
+    name: "Home GN950"
+    model: "27GN950"
+    serial: "111NTHMH2169"
+    settings:
+      mode: "3840x2160@144"
+      vrr: true
+
+  home_lg:
+    name: "Home LG"
+    model: "LG HDR 4K"
+    serial: "0x00023298"
+
+  culmer_small_dell:
+    name: "Culmer Small Dell"
+    model: "DELL P2014H"
+    serial: "J6HFT44BCNPL"
+    settings:
+      mode: "1600x900@60"
+
+  culmer_dell_2k:
+    name: "Culmer Dell 2K"
+    model: "HP ENVY 32"
+    serial: "CNC5230X96"
+    settings:
+      mode: "3840x2160@60"
+      scale: 1.5
+
+  nicole_lg:
+    name: "Nicole LG"
+    model: "LG HDR 4K"
+    serial: "0x00049EDF"
+
+  salesforce_widescreen:
+    name: "Salesforce Widescreen"
+    model: "DELL U3425WE"
+    serial: "H0JP3Z3"

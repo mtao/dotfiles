@@ -1,0 +1,7 @@
+$upperMonitor = {{ upper_monitor.name }}
+$laptopMonitor = {{ laptop_monitor.name }}
+
+monitor = $laptopMonitor, {{ laptop_monitor.mode }},0x0,{{ laptop_monitor.scale }}{% if laptop_monitor.vrr %},vrr,1{% endif %}
+monitor = $upperMonitor, {{ upper_monitor.mode }},0x-{{ upper_monitor.height }},{{ upper_monitor.scale }}{% if upper_monitor.vrr %},vrr,1{% endif %}
+$monitor0 = $laptopMonitor
+$monitor1 = $upperMonitor

@@ -1,0 +1,2 @@
+$monitor0 = {{ laptop_monitor.name }}
+monitor = {{ laptop_monitor.name }}, {{ laptop_monitor.mode }},0x0,{{ laptop_monitor.scale }}{% if laptop_monitor.vrr %},vrr,1{% endif %}

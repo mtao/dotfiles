@@ -1,0 +1,84 @@
+workspaces:
+  home_three_monitors:
+    description: "Home 3 monitor setup"
+    monitors:
+      - home_lg
+      - framework_screen
+      - home_gn950
+    template: "three_monitors.conf.template"
+    variables:
+      center_monitor: "home_gn950"
+      right_monitor: "home_lg"
+      bottom_monitor: "framework_screen"
+
+  office_three_monitors:
+    description: "Office 3 monitor setup"
+    monitors:
+      - office_lg
+      - framework_screen
+      - office_dell
+    template: "three_monitors.conf.template"
+    variables:
+      left_monitor: "office_dell"
+      center_monitor: "office_lg"
+      bottom_monitor: "framework_screen"
+
+  office_vertical:
+    description: "Monitor over laptop (Office)"
+    monitors:
+      - framework_screen
+      - office_lg
+    template: "vertical_monitors.conf.template"
+    variables:
+      upper_monitor: "office_lg"
+      laptop_monitor: "framework_screen"
+
+  home_horizontal:
+    description: "Monitor next to laptop (Home GN950)"
+    monitors:
+      - framework_screen
+      - home_gn950
+    template: "horizontal_monitors.conf.template"
+    variables:
+      right_monitor: "home_gn950"
+      laptop_monitor: "framework_screen"
+
+  culmer_horizontal_builtin:
+    description: "Monitor next to laptop (Culmer Small Dell)"
+    monitors:
+      - framework_screen
+      - culmer_small_dell
+    template: "horizontal_monitors.conf.template"
+    variables:
+      left_monitor: "culmer_small_dell"
+      right_monitor: null
+      laptop_monitor: "framework_screen"
+
+  culmer_horizontal_2k:
+    description: "Monitor next to laptop (Culmer 2K setup)"
+    monitors:
+      - culmer_dell_2k
+      - culmer_small_dell
+    template: "horizontal_monitors.conf.template"
+    variables:
+      left_monitor: "culmer_small_dell"
+      right_monitor: null
+      laptop_monitor: "culmer_dell_2k"
+
+  salesforce_vertical:
+    description: "Monitor over laptop (Salesforce)"
+    monitors:
+      - framework_screen
+      - salesforce_widescreen
+    template: "vertical_monitors.conf.template"
+    variables:
+      upper_monitor: "salesforce_widescreen"
+      laptop_monitor: "framework_screen"
+
+  default_laptop:
+    description: "Default laptop mode"
+    monitors:
+      - framework_screen
+    template: "laptop_default.conf.template"
+    variables:
+      laptop_monitor: "framework_screen"
