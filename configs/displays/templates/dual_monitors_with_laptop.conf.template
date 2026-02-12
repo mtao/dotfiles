@@ -1,0 +1,10 @@
+$leftMonitor = {{ left_monitor.name }}
+$rightMonitor = {{ right_monitor.name }}
+$laptopMonitor = {{ laptop_monitor.name }}
+
+monitor = $leftMonitor, {{ left_monitor.mode }},0x0,{{ left_monitor.scale }}{% if left_monitor.vrr %},vrr,1{% endif %}
+monitor = $rightMonitor, {{ right_monitor.mode }},{{ left_monitor.width }}x0,{{ right_monitor.scale }}{% if right_monitor.vrr %},vrr,1{% endif %}
+monitor = $laptopMonitor, {{ laptop_monitor.mode }},0x{{ left_monitor.height }},{{ laptop_monitor.scale }}{% if laptop_monitor.vrr %},vrr,1{% endif %}
+$monitor0 = $laptopMonitor
+$monitor1 = $leftMonitor
+$monitor2 = $rightMonitor

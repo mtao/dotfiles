@@ -30,6 +30,14 @@ monitors:
       mode: "3840x2160@144"
       vrr: true
 
+  home_gn950@60:
+    name: "Home GN950"
+    model: "27GN950"
+    serial: "111NTHMH2169"
+    settings:
+      mode: "3840x2160@60"
+      vrr: true
+
   home_lg:
     name: "Home LG"
     model: "LG HDR 4K"

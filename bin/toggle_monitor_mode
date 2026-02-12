@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-toggle_monitor_mode.py - Automatically configures Hyprland monitor layouts based on connected displays.
+toggle_monitor_mode - Configures Hyprland monitor layouts based on connected displays.
 
-This script detects connected monitors and applies the appropriate workspace configuration
-from YAML config files.
+By default, detects connected monitors and applies the best matching workspace.
+Use --toggle to cycle through all compatible workspaces for the connected monitors.
+Use --mode to explicitly select a workspace by name.
 """
 
 import argparse
 import os
+import re
 import sys
-import json
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
@@ -28,6 +28,7 @@ CONFIG_DIR = Path.home() / ".config" / "hypr" / "config.d"
 TEMPLATES_DIR = REPO_ROOT / "configs" / "displays" / "templates"
 MONITORS_YAML = REPO_ROOT / "configs" / "displays" / "monitors.yaml"
 WORKSPACES_YAML = REPO_ROOT / "configs" / "displays" / "workspaces.yaml"
+STATE_FILE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "monitor_mode_state"
 
 
 def load_yaml(path: Path) -> Dict[str, Any]:
@@ -37,16 +38,31 @@ def load_yaml(path: Path) -> Dict[str, Any]:
 
 
 def get_connected_monitors() -> List[Monitor]:
-    """Get all currently connected monitors using hyprpy."""
+    """Get all currently connected monitors using hyprpy.
+
+    Forces a Hyprland reload first so that the monitor list reflects
+    the actual physical connections (Hyprland can have a stale view).
+    """
+    try:
+        subprocess.run(
+            ["hyprctl", "reload"],
+            check=True,
+            capture_output=True
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"Warning: Failed to reload Hyprland before monitor query: {e}", file=sys.stderr)
+
     instance = Hyprland()
     return instance.get_monitors()
 
 
-def match_monitor(monitor: Monitor, configured_monitors: Dict[str, Dict]) -> Optional[str]:
+def match_monitor(monitor: Monitor, configured_monitors: Dict[str, Dict]) -> List[str]:
     """
-    Match a connected monitor to a configured monitor by model and serial.
-    Returns the configured monitor ID if matched, None otherwise.
+    Match a connected monitor to all configured monitors by model and serial.
+    A single physical display can match multiple configured monitor IDs (e.g. different
+    mode profiles for the same display). Returns a list of all matching config IDs.
     """
+    matches = []
     for monitor_id, config in configured_monitors.items():
         model_match = config.get('model') == monitor.model
         serial = config.get('serial')
@@ -55,24 +71,32 @@ def match_monitor(monitor: Monitor, configured_monitors: Dict[str, Dict]) -> Opt
         # Otherwise match both model and serial
         if serial is None or serial == "":
             if model_match:
-                return monitor_id
+                matches.append(monitor_id)
         else:
             if model_match and str(serial) == str(monitor.serial):
-                return monitor_id
+                matches.append(monitor_id)
     
-    return None
+    return matches
 
 
 def find_matching_workspace(
-    connected_monitor_ids: List[str],
+    monitor_match_map: Dict[str, List[str]],
     workspaces: Dict[str, Dict]
 ) -> Optional[tuple[str, Dict]]:
     """
     Find the best matching workspace configuration for the connected monitors.
+
+    monitor_match_map: Maps each physical monitor name to a list of all config IDs
+                       it matched against. A single display can match multiple config
+                       IDs (e.g. different mode profiles for the same hardware).
+
     Returns tuple of (workspace_name, workspace_config) or None if no match.
     """
-    connected_set = set(connected_monitor_ids)
-    
+    # Build the set of all possible config IDs across all connected monitors
+    all_possible_ids = set()
+    for ids in monitor_match_map.values():
+        all_possible_ids.update(ids)
+
     # Sort workspaces by number of monitors (descending) to prefer multi-monitor setups
     sorted_workspaces = sorted(
         workspaces.items(),
@@ -83,10 +107,24 @@ def find_matching_workspace(
     for workspace_name, workspace_config in sorted_workspaces:
         required_monitors = set(workspace_config.get('monitors', []))
         
-        # Check if all required monitors for this workspace are connected
-        if required_monitors.issubset(connected_set):
+        # Check if all required monitors for this workspace are satisfiable
+        # by the connected displays. Each required config ID must be present
+        # in at least one connected display's match list.
+        if required_monitors.issubset(all_possible_ids):
             return (workspace_name, workspace_config)
     
+    return None
+
+
+def parse_mode_resolution(mode: str) -> Optional[tuple[int, int]]:
+    """Parse width and height from a mode string like '3840x2160@60' or '1600x900'.
+    
+    Returns (width, height) if the mode contains a resolution, None otherwise
+    (e.g. for 'preferred').
+    """
+    match = re.match(r'^(\d+)x(\d+)(?:@[\d.]+)?$', mode)
+    if match:
+        return int(match.group(1)), int(match.group(2))
     return None
 
 
@@ -135,6 +173,12 @@ def render_template(
     """
     template_path = TEMPLATES_DIR / template_name
 
+    if not template_path.exists():
+        available = [f.name for f in TEMPLATES_DIR.glob("*.template")]
+        print(f"Error: Template '{template_name}' not found in {TEMPLATES_DIR}", file=sys.stderr)
+        print(f"  Available templates: {', '.join(sorted(available))}", file=sys.stderr)
+        sys.exit(1)
+
     with open(template_path, 'r') as f:
         template_content = f.read()
 
@@ -156,19 +200,31 @@ def render_template(
         elif monitor_id in monitors:
             monitor = monitors[monitor_id]
             settings = get_monitor_settings(configured_monitors, monitor_id)
+            # Extract width/height from mode if it specifies a resolution,
+            # otherwise fall back to the monitor's current dimensions
+            mode_resolution = parse_mode_resolution(settings['mode'])
+            if mode_resolution:
+                width, height = mode_resolution
+            else:
+                width, height = monitor.width, monitor.height
             context[var_name] = {
                 "name": monitor.name,
-                "width": monitor.width,
-                "height": monitor.height,
+                "width": width,
+                "height": height,
                 **settings
             }
         else:
             # Monitor not connected but referenced - use empty values
             settings = get_monitor_settings(configured_monitors, monitor_id)
+            mode_resolution = parse_mode_resolution(settings['mode'])
+            if mode_resolution:
+                width, height = mode_resolution
+            else:
+                width, height = 0, 0
             context[var_name] = {
                 "name": "",
-                "width": 0,
-                "height": 0,
+                "width": width,
+                "height": height,
                 **settings
             }
 
@@ -205,10 +261,106 @@ def apply_monitor_config(config_content: str):
         print(f"Failed to reload Hyprland config: {e}", file=sys.stderr)
 
 
+def list_workspaces(workspaces: Dict[str, Dict]) -> None:
+    """Print a table of all available workspace modes."""
+    print("Available monitor modes:")
+    print(f"  {'Name':<30} {'Description':<45} {'Monitors'}")
+    print(f"  {'-'*30} {'-'*45} {'-'*30}")
+    for name, config in workspaces.items():
+        description = config.get('description', '')
+        monitors = ', '.join(config.get('monitors', []))
+        print(f"  {name:<30} {description:<45} {monitors}")
+
+
+def find_compatible_workspaces(
+    monitor_match_map: Dict[str, List[str]],
+    workspaces: Dict[str, Dict]
+) -> List[tuple[str, Dict]]:
+    """
+    Find all workspace configurations compatible with connected monitors.
+    Returns a list of (workspace_name, workspace_config) sorted by monitor count descending.
+    """
+    all_possible_ids = set()
+    for ids in monitor_match_map.values():
+        all_possible_ids.update(ids)
+
+    compatible = []
+    for workspace_name, workspace_config in workspaces.items():
+        required_monitors = set(workspace_config.get('monitors', []))
+        if required_monitors.issubset(all_possible_ids):
+            compatible.append((workspace_name, workspace_config))
+
+    # Sort by monitor count descending for consistent ordering
+    compatible.sort(key=lambda x: len(x[1].get('monitors', [])), reverse=True)
+    return compatible
+
+
+def read_current_mode() -> Optional[str]:
+    """Read the currently active monitor mode from state file."""
+    try:
+        return STATE_FILE.read_text().strip()
+    except (FileNotFoundError, OSError):
+        return None
+
+
+def write_current_mode(mode_name: str) -> None:
+    """Write the active monitor mode to state file."""
+    try:
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.write_text(mode_name)
+    except OSError as e:
+        print(f"Warning: Could not save mode state: {e}", file=sys.stderr)
+
+
+def get_next_mode(
+    compatible: List[tuple[str, Dict]],
+    current_mode: Optional[str]
+) -> Optional[tuple[str, Dict]]:
+    """
+    Get the next mode in the cycle of compatible workspaces.
+    If current mode is unknown or not in the list, returns the first compatible mode.
+    """
+    if not compatible:
+        return None
+
+    names = [name for name, _ in compatible]
+
+    if current_mode in names:
+        current_idx = names.index(current_mode)
+        next_idx = (current_idx + 1) % len(compatible)
+    else:
+        next_idx = 0
+
+    return compatible[next_idx]
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Automatically configure Hyprland monitor layouts based on connected displays."
+        description="Configure Hyprland monitor layouts based on connected displays."
+    )
+    parser.add_argument(
+        "--mode", "-m",
+        type=str,
+        default=None,
+        help="Explicitly select a monitor mode (workspace name) to apply"
+    )
+    parser.add_argument(
+        "--default-mode",
+        type=str,
+        default=None,
+        help="Default monitor mode to use instead of auto-detection (overridden by --mode). "
+             "Can also be set via DEFAULT_MONITOR_MODE environment variable."
+    )
+    parser.add_argument(
+        "--toggle", "-t",
+        action="store_true",
+        help="Cycle through all compatible monitor modes for the connected displays"
+    )
+    parser.add_argument(
+        "--list-modes", "-l",
+        action="store_true",
+        help="List all available monitor modes and exit"
     )
     parser.add_argument(
         "--dry-run",
@@ -221,7 +373,11 @@ def main():
         help="Show detailed output"
     )
     args = parser.parse_args()
-    
+
+    if args.toggle and args.mode:
+        print("Error: --toggle and --mode are mutually exclusive.", file=sys.stderr)
+        sys.exit(1)
+
     # Load configuration files
     try:
         monitors_config = load_yaml(MONITORS_YAML)
@@ -229,64 +385,163 @@ def main():
     except FileNotFoundError as e:
         print(f"Error: Could not load configuration file: {e}", file=sys.stderr)
         sys.exit(1)
-    
+
     configured_monitors = monitors_config.get('monitors', {})
     workspaces = workspaces_config.get('workspaces', {})
-    
+
+    # Validate workspace configs reference existing templates and monitors
+    errors = []
+    for ws_name, ws_config in workspaces.items():
+        template = ws_config.get('template', '')
+        template_path = TEMPLATES_DIR / template
+        if template and not template_path.exists():
+            errors.append(f"  Workspace '{ws_name}': template '{template}' not found")
+        for mon_id in ws_config.get('monitors', []):
+            if mon_id not in configured_monitors:
+                errors.append(f"  Workspace '{ws_name}': monitor '{mon_id}' not defined in monitors.yaml")
+    if errors:
+        print("Configuration errors:", file=sys.stderr)
+        for e in errors:
+            print(e, file=sys.stderr)
+        sys.exit(1)
+
+    # Handle --list-modes
+    if args.list_modes:
+        list_workspaces(workspaces)
+        sys.exit(0)
+
+    # Validate --mode and --default-mode refer to known workspaces early
+    if args.mode and args.mode not in workspaces:
+        print(f"Error: Unknown monitor mode '{args.mode}'. Use --list-modes to see available modes.", file=sys.stderr)
+        sys.exit(1)
+    default_mode = args.default_mode or os.environ.get('DEFAULT_MONITOR_MODE')
+    if default_mode and default_mode not in workspaces:
+        print(f"Error: Unknown default monitor mode '{default_mode}'. Use --list-modes to see available modes.", file=sys.stderr)
+        sys.exit(1)
+
     if args.verbose:
         print(f"Loaded {len(configured_monitors)} monitor configurations")
         print(f"Loaded {len(workspaces)} workspace configurations")
-    
+
     # Get connected monitors
     try:
         connected = get_connected_monitors()
     except Exception as e:
         print(f"Error: Failed to get connected monitors: {e}", file=sys.stderr)
         sys.exit(1)
-    
+
     print(f"Connected monitors:")
     for m in connected:
         print(f"  - {m.name}: model={m.model}, serial={m.serial}")
-    
+
     # Match connected monitors to configured monitors
-    connected_monitor_ids = []
+    # A single physical display can match multiple config IDs (e.g. different
+    # mode profiles), so we track all matches per display.
+    monitor_match_map = {}  # Maps physical monitor name to list of config IDs
     monitor_objects = {}  # Maps config ID to Monitor object
-    
+
     for monitor in connected:
-        matched_id = match_monitor(monitor, configured_monitors)
-        if matched_id:
-            connected_monitor_ids.append(matched_id)
-            monitor_objects[matched_id] = monitor
-            print(f"  Matched: {monitor.name} -> {matched_id} ({configured_monitors[matched_id]['name']})")
+        matched_ids = match_monitor(monitor, configured_monitors)
+        if matched_ids:
+            monitor_match_map[monitor.name] = matched_ids
+            for mid in matched_ids:
+                monitor_objects[mid] = monitor
+            names = ", ".join(f"{mid} ({configured_monitors[mid]['name']})" for mid in matched_ids)
+            print(f"  Matched: {monitor.name} -> {names}")
         else:
             print(f"  Unmatched: {monitor.name} (model={monitor.model}, serial={monitor.serial})")
-    
-    # Find matching workspace
-    result = find_matching_workspace(connected_monitor_ids, workspaces)
-    
-    if result:
-        workspace_name, workspace_config = result
+
+    # Determine which workspace to apply
+    workspace_name = None
+    workspace_config = None
+
+    if args.toggle:
+        # Toggle: cycle through all compatible workspaces
+        compatible = find_compatible_workspaces(monitor_match_map, workspaces)
+        if not compatible:
+            print("No compatible monitor modes found for connected displays.")
+            if not args.dry_run:
+                hyprctl_notify("No compatible modes found", color="ff0000")
+            sys.exit(1)
+
+        current_mode = read_current_mode()
+        result = get_next_mode(compatible, current_mode)
+        if result:
+            workspace_name, workspace_config = result
+            compatible_names = [n for n, _ in compatible]
+            current_idx = compatible_names.index(workspace_name)
+            print(f"\nToggle: cycling to mode {current_idx + 1}/{len(compatible)}")
+            if args.verbose:
+                print(f"  Compatible modes: {', '.join(compatible_names)}")
+                print(f"  Previous mode: {current_mode or '(none)'}")
+
+    elif args.mode:
+        # Explicit mode selection
+        mode = args.mode
+
+        candidate_config = workspaces[mode]
+        required_monitors = set(candidate_config.get('monitors', []))
+
+        all_possible_ids = set()
+        for ids in monitor_match_map.values():
+            all_possible_ids.update(ids)
+
+        if required_monitors.issubset(all_possible_ids):
+            workspace_name = mode
+            workspace_config = candidate_config
+            print(f"\nUsing explicitly selected mode '{mode}'")
+        else:
+            missing = required_monitors - all_possible_ids
+            print(f"Error: Mode '{mode}' requires monitors not connected: {', '.join(missing)}", file=sys.stderr)
+            hyprctl_notify(f"Mode {mode} failed: missing monitors", color="ff0000")
+            sys.exit(1)
+
+    else:
+        # Auto-detect: default-mode > DEFAULT_MONITOR_MODE env > best match
+        if default_mode:
+            candidate_config = workspaces[default_mode]
+            required_monitors = set(candidate_config.get('monitors', []))
+
+            all_possible_ids = set()
+            for ids in monitor_match_map.values():
+                all_possible_ids.update(ids)
+
+            if required_monitors.issubset(all_possible_ids):
+                workspace_name = default_mode
+                workspace_config = candidate_config
+                source = "--default-mode" if args.default_mode else "DEFAULT_MONITOR_MODE env"
+                print(f"\nUsing default mode '{default_mode}' (via {source})")
+            else:
+                missing = required_monitors - all_possible_ids
+                print(f"Warning: Default mode '{default_mode}' requires monitors not connected: {', '.join(missing)}")
+                print("Falling back to auto-detection...")
+
+        if workspace_config is None:
+            # Auto-detect best workspace
+            result = find_matching_workspace(monitor_match_map, workspaces)
+            if result:
+                workspace_name, workspace_config = result
+
+    # Apply the selected workspace
+    if workspace_config:
         description = workspace_config.get('description', workspace_name)
         template = workspace_config.get('template', 'laptop_default.conf.template')
         variables = workspace_config.get('variables', {})
-        
+
         print(f"\nSelected workspace: {workspace_name} ({description})")
         print(f"Template: {template}")
-        
+
         # Render the template
         config_content = render_template(template, variables, monitor_objects, {}, configured_monitors)
-        
+
         if args.dry_run:
             print("\n--- Dry run mode - would apply the following configuration: ---")
             print(config_content)
             print("--- End of configuration ---")
         else:
-            # Apply configuration
             apply_monitor_config(config_content)
-            
-            # Notify user
+            write_current_mode(workspace_name)
             hyprctl_notify(f"{description} enabled")
-            
             print(f"Configuration applied successfully.")
     else:
         # Default to laptop mode
@@ -295,14 +550,15 @@ def main():
             template = default_workspace.get('template', 'laptop_default.conf.template')
             variables = default_workspace.get('variables', {})
             config_content = render_template(template, variables, monitor_objects, {}, configured_monitors)
-            
+
             if args.dry_run:
                 print("\n--- Dry run mode - would apply default laptop configuration: ---")
                 print(config_content)
                 print("--- End of configuration ---")
             else:
                 apply_monitor_config(config_content)
-        
+                write_current_mode('default_laptop')
+
         if not args.dry_run:
             hyprctl_notify("Default laptop mode enabled")
         print("No matching workspace found. Applied default laptop mode.")

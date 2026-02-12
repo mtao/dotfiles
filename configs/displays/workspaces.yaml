@@ -4,12 +4,12 @@ workspaces:
     monitors:
       - home_lg
       - framework_screen
-      - home_gn950
-    template: "three_monitors.conf.template"
+      - home_gn950@60
+    template: "dual_monitors_with_laptop.conf.template"
     variables:
-      center_monitor: "home_gn950"
+      left_monitor: "home_gn950@60"
       right_monitor: "home_lg"
-      bottom_monitor: "framework_screen"
+      laptop_monitor: "framework_screen"
 
   office_three_monitors:
     description: "Office 3 monitor setup"
@@ -36,19 +36,19 @@ workspaces:
   home_horizontal:
     description: "Monitor next to laptop (Home GN950)"
     monitors:
-      - framework_screen
-      - home_gn950
-    template: "horizontal_monitors.conf.template"
+      - home_lg
+      - home_gn950@60
+    template: "dual_horizontal_monitors.conf.template"
     variables:
-      right_monitor: "home_gn950"
-      laptop_monitor: "framework_screen"
+      left_monitor: "home_gn950@60"
+      right_monitor: "home_lg"
 
   culmer_horizontal_builtin:
     description: "Monitor next to laptop (Culmer Small Dell)"
     monitors:
       - framework_screen
       - culmer_small_dell
-    template: "horizontal_monitors.conf.template"
+    template: "dual_horizontal_monitors.conf.template"
     variables:
       left_monitor: "culmer_small_dell"
       right_monitor: null
@@ -59,7 +59,7 @@ workspaces:
     monitors:
       - culmer_dell_2k
       - culmer_small_dell
-    template: "horizontal_monitors.conf.template"
+    template: "dual_horizontal_monitors.conf.template"
     variables:
       left_monitor: "culmer_small_dell"
       right_monitor: null
