@@ -43,6 +43,16 @@ workspaces:
       left_monitor: "home_gn950@60"
       right_monitor: "home_lg"
 
+  home_horizontal_right:
+    description: "Monitor next to laptop (Home GN950)"
+    monitors:
+      - home_lg
+      - framework_screen
+    template: "dual_horizontal_monitors.conf.template"
+    variables:
+      left_monitor: "framework_screen"
+      right_monitor: "home_lg"
+
   culmer_horizontal_builtin:
     description: "Monitor next to laptop (Culmer Small Dell)"
     monitors:

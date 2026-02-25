@@ -8,6 +8,7 @@ Use --mode to explicitly select a workspace by name.
 """
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -38,7 +39,12 @@ def load_yaml(path: Path) -> Dict[str, Any]:
 
 
 def get_connected_monitors() -> List[Monitor]:
-    """Get all currently connected monitors using hyprpy.
+    """Get all currently connected monitors via hyprpy IPC.
+
+    Uses the 'monitors all' command to include disabled monitors that are
+    physically connected but not yet enabled. The default hyprpy get_monitors()
+    only returns enabled monitors, missing displays that are connected but
+    disabled by the current config.
 
     Forces a Hyprland reload first so that the monitor list reflects
     the actual physical connections (Hyprland can have a stale view).
@@ -53,7 +59,8 @@ def get_connected_monitors() -> List[Monitor]:
         print(f"Warning: Failed to reload Hyprland before monitor query: {e}", file=sys.stderr)
 
     instance = Hyprland()
-    return instance.get_monitors()
+    monitors_json = instance.command_socket.send_command('monitors', flags=['-j'], args=['all'])
+    return [Monitor(m, instance) for m in json.loads(monitors_json)]
 
 
 def match_monitor(monitor: Monitor, configured_monitors: Dict[str, Dict]) -> List[str]:
