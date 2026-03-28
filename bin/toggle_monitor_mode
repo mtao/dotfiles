@@ -14,10 +14,9 @@ import re
 import sys
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 import yaml
-import jinja2
 from hyprpy import Hyprland
 from hyprpy.components.monitors import Monitor
 
@@ -26,10 +25,12 @@ from hyprpy.components.monitors import Monitor
 SCRIPT_DIR = Path(__file__).parent.resolve()
 REPO_ROOT = SCRIPT_DIR.parent
 CONFIG_DIR = Path.home() / ".config" / "hypr" / "config.d"
-TEMPLATES_DIR = REPO_ROOT / "configs" / "displays" / "templates"
 MONITORS_YAML = REPO_ROOT / "configs" / "displays" / "monitors.yaml"
 WORKSPACES_YAML = REPO_ROOT / "configs" / "displays" / "workspaces.yaml"
 STATE_FILE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "monitor_mode_state"
+
+# Valid position relationship keywords in workspace layout entries
+POSITION_KEYWORDS = frozenset(["right_of", "left_of", "above", "below"])
 
 
 def load_yaml(path: Path) -> Dict[str, Any]:
@@ -63,6 +64,56 @@ def get_connected_monitors() -> List[Monitor]:
     return [Monitor(m, instance) for m in json.loads(monitors_json)]
 
 
+def deduplicate_monitors(
+    monitors: List[Monitor],
+) -> Tuple[List[Monitor], Dict[str, List[Monitor]]]:
+    """Deduplicate monitors that represent the same physical display.
+
+    When the same monitor appears on multiple ports (e.g. DP-1 and DP-3),
+    Hyprland reports it multiple times. We keep only one instance per
+    physical monitor, preferring enabled over disabled instances.
+    Duplicate entries are tracked so they can be configured as mirrors.
+
+    Deduplication uses the (model, serial) pair from the actual monitor.
+    Monitors with empty or missing serials are never deduplicated since we
+    cannot reliably distinguish them from other monitors of the same model.
+
+    Returns:
+        A tuple of (deduplicated_monitors, mirrors) where mirrors maps
+        each primary monitor's output name to the list of duplicate
+        Monitor objects that should mirror it.
+    """
+    seen: Dict[tuple, int] = {}  # (model, serial) -> index in result
+    result: List[Monitor] = []
+    mirrors: Dict[str, List[Monitor]] = {}
+
+    for monitor in monitors:
+        serial = monitor.serial
+        if not serial:
+            # Can't reliably deduplicate without a serial number
+            result.append(monitor)
+            continue
+
+        key = (monitor.model, serial)
+        if key in seen:
+            idx = seen[key]
+            existing = result[idx]
+            if not monitor.is_disabled and existing.is_disabled:
+                # Current is enabled, existing is disabled -- swap primary
+                result[idx] = monitor
+                old_mirrors = mirrors.pop(existing.name, [])
+                old_mirrors.append(existing)
+                mirrors[monitor.name] = old_mirrors
+            else:
+                # Keep existing as primary, current becomes a mirror
+                mirrors.setdefault(existing.name, []).append(monitor)
+        else:
+            seen[key] = len(result)
+            result.append(monitor)
+
+    return result, mirrors
+
+
 def match_monitor(monitor: Monitor, configured_monitors: Dict[str, Dict]) -> List[str]:
     """
     Match a connected monitor to all configured monitors by model and serial.
@@ -73,7 +124,7 @@ def match_monitor(monitor: Monitor, configured_monitors: Dict[str, Dict]) -> Lis
     for monitor_id, config in configured_monitors.items():
         model_match = config.get('model') == monitor.model
         serial = config.get('serial')
-        
+
         # If serial is null/None in config, match only by model
         # Otherwise match both model and serial
         if serial is None or serial == "":
@@ -82,14 +133,19 @@ def match_monitor(monitor: Monitor, configured_monitors: Dict[str, Dict]) -> Lis
         else:
             if model_match and str(serial) == str(monitor.serial):
                 matches.append(monitor_id)
-    
+
     return matches
+
+
+def get_workspace_monitors(workspace_config: Dict) -> List[str]:
+    """Extract the list of monitor config IDs from a workspace's layout."""
+    return [entry['monitor'] for entry in workspace_config.get('layout', [])]
 
 
 def find_matching_workspace(
     monitor_match_map: Dict[str, List[str]],
     workspaces: Dict[str, Dict]
-) -> Optional[tuple[str, Dict]]:
+) -> Optional[Tuple[str, Dict]]:
     """
     Find the best matching workspace configuration for the connected monitors.
 
@@ -107,25 +163,25 @@ def find_matching_workspace(
     # Sort workspaces by number of monitors (descending) to prefer multi-monitor setups
     sorted_workspaces = sorted(
         workspaces.items(),
-        key=lambda x: len(x[1].get('monitors', [])),
+        key=lambda x: len(get_workspace_monitors(x[1])),
         reverse=True
     )
-    
+
     for workspace_name, workspace_config in sorted_workspaces:
-        required_monitors = set(workspace_config.get('monitors', []))
-        
+        required_monitors = set(get_workspace_monitors(workspace_config))
+
         # Check if all required monitors for this workspace are satisfiable
         # by the connected displays. Each required config ID must be present
         # in at least one connected display's match list.
         if required_monitors.issubset(all_possible_ids):
             return (workspace_name, workspace_config)
-    
+
     return None
 
 
-def parse_mode_resolution(mode: str) -> Optional[tuple[int, int]]:
+def parse_mode_resolution(mode: str) -> Optional[Tuple[int, int]]:
     """Parse width and height from a mode string like '3840x2160@60' or '1600x900'.
-    
+
     Returns (width, height) if the mode contains a resolution, None otherwise
     (e.g. for 'preferred').
     """
@@ -137,7 +193,7 @@ def parse_mode_resolution(mode: str) -> Optional[tuple[int, int]]:
 
 def get_monitor_settings(configured_monitors: Dict[str, Dict], monitor_id: str) -> Dict[str, Any]:
     """Get settings for a monitor from configuration.
-    
+
     Settings are optional - only specified settings override defaults.
     mode: "preferred" or "WIDTHxHEIGHT[@REFRESH_RATE]" (e.g., "3840x2160@144")
     vrr: true/false (default: false)
@@ -145,14 +201,14 @@ def get_monitor_settings(configured_monitors: Dict[str, Dict], monitor_id: str) 
     """
     config = configured_monitors.get(monitor_id, {})
     settings = config.get('settings', {})
-    
+
     # Start with defaults
     result = {
         'mode': 'preferred',
         'vrr': False,
         'scale': 1.0,
     }
-    
+
     # Override with any specified settings
     if 'mode' in settings:
         result['mode'] = settings['mode']
@@ -160,82 +216,121 @@ def get_monitor_settings(configured_monitors: Dict[str, Dict], monitor_id: str) 
         result['vrr'] = settings['vrr']
     if 'scale' in settings:
         result['scale'] = settings['scale']
-    
+
     return result
 
 
-def render_template(
-    template_name: str,
-    variables: Dict[str, Any],
-    monitors: Dict[str, Monitor],
-    monitor_id_map: Dict[str, str],
-    configured_monitors: Dict[str, Dict]
+def get_monitor_dimensions(
+    monitor_id: str,
+    configured_monitors: Dict[str, Dict],
+    monitor_objects: Dict[str, Monitor],
+) -> Tuple[int, int]:
+    """Get the pixel dimensions for a monitor.
+
+    Uses the explicit mode resolution from config if available,
+    otherwise falls back to the live monitor dimensions.
+    """
+    settings = get_monitor_settings(configured_monitors, monitor_id)
+    mode_res = parse_mode_resolution(settings['mode'])
+    if mode_res:
+        return mode_res
+    if monitor_id in monitor_objects:
+        return monitor_objects[monitor_id].width, monitor_objects[monitor_id].height
+    return 0, 0
+
+
+def resolve_positions(
+    layout: List[Dict],
+    configured_monitors: Dict[str, Dict],
+    monitor_objects: Dict[str, Monitor],
+) -> Dict[str, Tuple[int, int]]:
+    """Compute absolute (x, y) pixel positions from relational layout constraints.
+
+    Each layout entry must specify either ``position: origin`` or exactly one
+    relational keyword (right_of, left_of, above, below) referencing a monitor
+    that has already been positioned earlier in the list.
+    """
+    positions: Dict[str, Tuple[int, int]] = {}
+
+    for entry in layout:
+        mid = entry['monitor']
+        self_w, self_h = get_monitor_dimensions(mid, configured_monitors, monitor_objects)
+
+        if entry.get('position') == 'origin':
+            positions[mid] = (0, 0)
+            continue
+
+        for kw in POSITION_KEYWORDS:
+            if kw not in entry:
+                continue
+            ref = entry[kw]
+            ref_x, ref_y = positions[ref]
+            ref_w, ref_h = get_monitor_dimensions(ref, configured_monitors, monitor_objects)
+
+            if kw == 'right_of':
+                positions[mid] = (ref_x + ref_w, ref_y)
+            elif kw == 'left_of':
+                positions[mid] = (ref_x - self_w, ref_y)
+            elif kw == 'below':
+                positions[mid] = (ref_x, ref_y + ref_h)
+            elif kw == 'above':
+                positions[mid] = (ref_x, ref_y - self_h)
+            break
+
+    return positions
+
+
+def generate_config(
+    workspace_config: Dict,
+    monitor_objects: Dict[str, Monitor],
+    configured_monitors: Dict[str, Dict],
+    mirrors: Optional[Dict[str, List[Monitor]]] = None,
 ) -> str:
+    """Generate Hyprland monitor configuration from a workspace layout.
+
+    Produces monitor lines, $monitorN aliases, an optional disable-others
+    directive, and mirror directives for duplicate physical monitors.
     """
-    Render a Jinja2 template with the given variables.
+    layout = workspace_config.get('layout', [])
+    monitor_order = workspace_config.get('monitor_order', [])
+    disable_others = workspace_config.get('disable_others', False)
 
-    variables: Maps template variable names to monitor config IDs
-    monitors: Maps monitor config IDs to actual Monitor objects
-    configured_monitors: Monitor configuration from YAML
-    """
-    template_path = TEMPLATES_DIR / template_name
+    positions = resolve_positions(layout, configured_monitors, monitor_objects)
 
-    if not template_path.exists():
-        available = [f.name for f in TEMPLATES_DIR.glob("*.template")]
-        print(f"Error: Template '{template_name}' not found in {TEMPLATES_DIR}", file=sys.stderr)
-        print(f"  Available templates: {', '.join(sorted(available))}", file=sys.stderr)
-        sys.exit(1)
+    lines: List[str] = []
 
-    with open(template_path, 'r') as f:
-        template_content = f.read()
+    # Disable all non-configured monitors when requested
+    if disable_others:
+        lines.append("monitor = ,disable")
 
-    template = jinja2.Template(template_content)
+    # Emit monitor configuration lines
+    for entry in layout:
+        mid = entry['monitor']
+        if mid not in monitor_objects:
+            continue
+        monitor = monitor_objects[mid]
+        settings = get_monitor_settings(configured_monitors, mid)
+        x, y = positions[mid]
 
-    # Build the context for the template
-    context = {}
-    for var_name, monitor_id in variables.items():
-        if monitor_id is None:
-            # Handle null monitors (e.g., right_monitor: null)
-            context[var_name] = {
-                "name": "",
-                "width": 0,
-                "height": 0,
-                "mode": "preferred",
-                "vrr": False,
-                "scale": 1.0,
-            }
-        elif monitor_id in monitors:
-            monitor = monitors[monitor_id]
-            settings = get_monitor_settings(configured_monitors, monitor_id)
-            # Extract width/height from mode if it specifies a resolution,
-            # otherwise fall back to the monitor's current dimensions
-            mode_resolution = parse_mode_resolution(settings['mode'])
-            if mode_resolution:
-                width, height = mode_resolution
-            else:
-                width, height = monitor.width, monitor.height
-            context[var_name] = {
-                "name": monitor.name,
-                "width": width,
-                "height": height,
-                **settings
-            }
-        else:
-            # Monitor not connected but referenced - use empty values
-            settings = get_monitor_settings(configured_monitors, monitor_id)
-            mode_resolution = parse_mode_resolution(settings['mode'])
-            if mode_resolution:
-                width, height = mode_resolution
-            else:
-                width, height = 0, 0
-            context[var_name] = {
-                "name": "",
-                "width": width,
-                "height": height,
-                **settings
-            }
+        line = f"monitor = {monitor.name}, {settings['mode']},{x}x{y},{settings['scale']}"
+        if settings['vrr']:
+            line += ",vrr,1"
+        lines.append(line)
 
-    return template.render(**context)
+    # Emit $monitorN aliases for keybindings
+    for i, mid in enumerate(monitor_order):
+        if mid in monitor_objects:
+            lines.append(f"$monitor{i} = {monitor_objects[mid].name}")
+
+    # Emit mirror directives for duplicate monitor entries
+    if mirrors:
+        for primary_name, dupes in mirrors.items():
+            for dupe in dupes:
+                lines.append(
+                    f"monitor = {dupe.name}, preferred, auto, 1, mirror, {primary_name}"
+                )
+
+    return "\n".join(lines) + "\n"
 
 
 def hyprctl_notify(message: str, color: str = "ff0000"):
@@ -253,10 +348,10 @@ def hyprctl_notify(message: str, color: str = "ff0000"):
 def apply_monitor_config(config_content: str):
     """Apply the generated monitor configuration to Hyprland."""
     output_path = CONFIG_DIR / "monitors.conf"
-    
+
     with open(output_path, 'w') as f:
         f.write(config_content)
-    
+
     # Reload Hyprland config
     try:
         subprocess.run(
@@ -275,14 +370,14 @@ def list_workspaces(workspaces: Dict[str, Dict]) -> None:
     print(f"  {'-'*30} {'-'*45} {'-'*30}")
     for name, config in workspaces.items():
         description = config.get('description', '')
-        monitors = ', '.join(config.get('monitors', []))
+        monitors = ', '.join(get_workspace_monitors(config))
         print(f"  {name:<30} {description:<45} {monitors}")
 
 
 def find_compatible_workspaces(
     monitor_match_map: Dict[str, List[str]],
     workspaces: Dict[str, Dict]
-) -> List[tuple[str, Dict]]:
+) -> List[Tuple[str, Dict]]:
     """
     Find all workspace configurations compatible with connected monitors.
     Returns a list of (workspace_name, workspace_config) sorted by monitor count descending.
@@ -293,13 +388,18 @@ def find_compatible_workspaces(
 
     compatible = []
     for workspace_name, workspace_config in workspaces.items():
-        required_monitors = set(workspace_config.get('monitors', []))
+        required_monitors = set(get_workspace_monitors(workspace_config))
         if required_monitors.issubset(all_possible_ids):
             compatible.append((workspace_name, workspace_config))
 
     # Sort by monitor count descending for consistent ordering
-    compatible.sort(key=lambda x: len(x[1].get('monitors', [])), reverse=True)
+    compatible.sort(key=lambda x: len(get_workspace_monitors(x[1])), reverse=True)
     return compatible
+
+
+def get_required_monitors(workspace_config: Dict) -> set[str]:
+    """Get the set of monitor config IDs required by a workspace."""
+    return set(get_workspace_monitors(workspace_config))
 
 
 def read_current_mode() -> Optional[str]:
@@ -320,9 +420,9 @@ def write_current_mode(mode_name: str) -> None:
 
 
 def get_next_mode(
-    compatible: List[tuple[str, Dict]],
+    compatible: List[Tuple[str, Dict]],
     current_mode: Optional[str]
-) -> Optional[tuple[str, Dict]]:
+) -> Optional[Tuple[str, Dict]]:
     """
     Get the next mode in the cycle of compatible workspaces.
     If current mode is unknown or not in the list, returns the first compatible mode.
@@ -396,16 +496,37 @@ def main():
     configured_monitors = monitors_config.get('monitors', {})
     workspaces = workspaces_config.get('workspaces', {})
 
-    # Validate workspace configs reference existing templates and monitors
+    # Validate workspace configs reference existing monitors and have valid layouts
     errors = []
     for ws_name, ws_config in workspaces.items():
-        template = ws_config.get('template', '')
-        template_path = TEMPLATES_DIR / template
-        if template and not template_path.exists():
-            errors.append(f"  Workspace '{ws_name}': template '{template}' not found")
-        for mon_id in ws_config.get('monitors', []):
-            if mon_id not in configured_monitors:
-                errors.append(f"  Workspace '{ws_name}': monitor '{mon_id}' not defined in monitors.yaml")
+        layout = ws_config.get('layout', [])
+        if not layout:
+            errors.append(f"  Workspace '{ws_name}': missing or empty layout")
+        positioned = set()
+        for i, entry in enumerate(layout):
+            mid = entry.get('monitor')
+            if not mid:
+                errors.append(f"  Workspace '{ws_name}': layout entry {i} missing 'monitor'")
+                continue
+            if mid not in configured_monitors:
+                errors.append(f"  Workspace '{ws_name}': monitor '{mid}' not defined in monitors.yaml")
+            # Validate position specification
+            has_origin = entry.get('position') == 'origin'
+            rel_keys = [k for k in POSITION_KEYWORDS if k in entry]
+            if has_origin and rel_keys:
+                errors.append(f"  Workspace '{ws_name}': monitor '{mid}' has both 'position: origin' and '{rel_keys[0]}'")
+            elif not has_origin and not rel_keys:
+                errors.append(f"  Workspace '{ws_name}': monitor '{mid}' has no position specified")
+            elif rel_keys:
+                ref = entry[rel_keys[0]]
+                if ref not in positioned:
+                    errors.append(f"  Workspace '{ws_name}': monitor '{mid}' references '{ref}' which is not positioned yet")
+            positioned.add(mid)
+        # Validate monitor_order references monitors in layout
+        layout_monitors = set(get_workspace_monitors(ws_config))
+        for mid in ws_config.get('monitor_order', []):
+            if mid not in layout_monitors:
+                errors.append(f"  Workspace '{ws_name}': monitor_order references '{mid}' not in layout")
     if errors:
         print("Configuration errors:", file=sys.stderr)
         for e in errors:
@@ -430,12 +551,19 @@ def main():
         print(f"Loaded {len(configured_monitors)} monitor configurations")
         print(f"Loaded {len(workspaces)} workspace configurations")
 
-    # Get connected monitors
+    # Get connected monitors and deduplicate
     try:
-        connected = get_connected_monitors()
+        raw_monitors = get_connected_monitors()
     except Exception as e:
         print(f"Error: Failed to get connected monitors: {e}", file=sys.stderr)
         sys.exit(1)
+
+    connected, mirrors = deduplicate_monitors(raw_monitors)
+
+    if mirrors and args.verbose:
+        for primary, dupes in mirrors.items():
+            dupe_names = ", ".join(d.name for d in dupes)
+            print(f"  Duplicate monitors for {primary}: {dupe_names} (will mirror)")
 
     print(f"Connected monitors:")
     for m in connected:
@@ -487,18 +615,18 @@ def main():
         mode = args.mode
 
         candidate_config = workspaces[mode]
-        required_monitors = set(candidate_config.get('monitors', []))
+        required = get_required_monitors(candidate_config)
 
         all_possible_ids = set()
         for ids in monitor_match_map.values():
             all_possible_ids.update(ids)
 
-        if required_monitors.issubset(all_possible_ids):
+        if required.issubset(all_possible_ids):
             workspace_name = mode
             workspace_config = candidate_config
             print(f"\nUsing explicitly selected mode '{mode}'")
         else:
-            missing = required_monitors - all_possible_ids
+            missing = required - all_possible_ids
             print(f"Error: Mode '{mode}' requires monitors not connected: {', '.join(missing)}", file=sys.stderr)
             hyprctl_notify(f"Mode {mode} failed: missing monitors", color="ff0000")
             sys.exit(1)
@@ -507,19 +635,19 @@ def main():
         # Auto-detect: default-mode > DEFAULT_MONITOR_MODE env > best match
         if default_mode:
             candidate_config = workspaces[default_mode]
-            required_monitors = set(candidate_config.get('monitors', []))
+            required = get_required_monitors(candidate_config)
 
             all_possible_ids = set()
             for ids in monitor_match_map.values():
                 all_possible_ids.update(ids)
 
-            if required_monitors.issubset(all_possible_ids):
+            if required.issubset(all_possible_ids):
                 workspace_name = default_mode
                 workspace_config = candidate_config
                 source = "--default-mode" if args.default_mode else "DEFAULT_MONITOR_MODE env"
                 print(f"\nUsing default mode '{default_mode}' (via {source})")
             else:
-                missing = required_monitors - all_possible_ids
+                missing = required - all_possible_ids
                 print(f"Warning: Default mode '{default_mode}' requires monitors not connected: {', '.join(missing)}")
                 print("Falling back to auto-detection...")
 
@@ -532,14 +660,12 @@ def main():
     # Apply the selected workspace
     if workspace_config:
         description = workspace_config.get('description', workspace_name)
-        template = workspace_config.get('template', 'laptop_default.conf.template')
-        variables = workspace_config.get('variables', {})
 
         print(f"\nSelected workspace: {workspace_name} ({description})")
-        print(f"Template: {template}")
 
-        # Render the template
-        config_content = render_template(template, variables, monitor_objects, {}, configured_monitors)
+        config_content = generate_config(
+            workspace_config, monitor_objects, configured_monitors, mirrors
+        )
 
         if args.dry_run:
             print("\n--- Dry run mode - would apply the following configuration: ---")
@@ -554,9 +680,9 @@ def main():
         # Default to laptop mode
         default_workspace = workspaces.get('default_laptop')
         if default_workspace:
-            template = default_workspace.get('template', 'laptop_default.conf.template')
-            variables = default_workspace.get('variables', {})
-            config_content = render_template(template, variables, monitor_objects, {}, configured_monitors)
+            config_content = generate_config(
+                default_workspace, monitor_objects, configured_monitors, mirrors
+            )
 
             if args.dry_run:
                 print("\n--- Dry run mode - would apply default laptop configuration: ---")

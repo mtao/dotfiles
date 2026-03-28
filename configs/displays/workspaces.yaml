@@ -1,94 +1,103 @@
 workspaces:
   home_three_monitors:
     description: "Home 3 monitor setup"
-    monitors:
-      - home_lg
+    layout:
+      - monitor: home_gn950@60
+        position: origin
+      - monitor: home_lg
+        right_of: home_gn950@60
+      - monitor: framework_screen
+        below: home_gn950@60
+    monitor_order:
       - framework_screen
       - home_gn950@60
-    template: "dual_monitors_with_laptop.conf.template"
-    variables:
-      left_monitor: "home_gn950@60"
-      right_monitor: "home_lg"
-      laptop_monitor: "framework_screen"
+      - home_lg
 
   office_three_monitors:
     description: "Office 3 monitor setup"
-    monitors:
-      - office_lg
+    layout:
+      - monitor: office_lg
+        position: origin
+      - monitor: office_dell
+        left_of: office_lg
+      - monitor: framework_screen
+        below: office_lg
+    monitor_order:
       - framework_screen
+      - office_lg
       - office_dell
-    template: "three_monitors.conf.template"
-    variables:
-      left_monitor: "office_dell"
-      center_monitor: "office_lg"
-      bottom_monitor: "framework_screen"
 
   office_vertical:
     description: "Monitor over laptop (Office)"
-    monitors:
+    layout:
+      - monitor: framework_screen
+        position: origin
+      - monitor: office_lg
+        above: framework_screen
+    monitor_order:
       - framework_screen
       - office_lg
-    template: "vertical_monitors.conf.template"
-    variables:
-      upper_monitor: "office_lg"
-      laptop_monitor: "framework_screen"
 
   home_horizontal:
     description: "Monitor next to laptop (Home GN950)"
-    monitors:
-      - home_lg
+    layout:
+      - monitor: home_gn950@60
+        position: origin
+      - monitor: home_lg
+        right_of: home_gn950@60
+    monitor_order:
       - home_gn950@60
-    template: "dual_horizontal_monitors.conf.template"
-    variables:
-      left_monitor: "home_gn950@60"
-      right_monitor: "home_lg"
+      - home_lg
 
   home_horizontal_right:
     description: "Monitor next to laptop (Home GN950)"
-    monitors:
-      - home_lg
+    layout:
+      - monitor: framework_screen
+        position: origin
+      - monitor: home_lg
+        right_of: framework_screen
+    monitor_order:
       - framework_screen
-    template: "dual_horizontal_monitors.conf.template"
-    variables:
-      left_monitor: "framework_screen"
-      right_monitor: "home_lg"
+      - home_lg
 
   culmer_horizontal_builtin:
     description: "Monitor next to laptop (Culmer Small Dell)"
-    monitors:
-      - framework_screen
+    layout:
+      - monitor: culmer_small_dell
+        position: origin
+      - monitor: framework_screen
+        right_of: culmer_small_dell
+    monitor_order:
       - culmer_small_dell
-    template: "dual_horizontal_monitors.conf.template"
-    variables:
-      left_monitor: "culmer_small_dell"
-      right_monitor: null
-      laptop_monitor: "framework_screen"
+      - framework_screen
 
   culmer_horizontal_2k:
     description: "Monitor next to laptop (Culmer 2K setup)"
-    monitors:
-      - culmer_dell_2k
+    layout:
+      - monitor: culmer_small_dell
+        position: origin
+      - monitor: culmer_dell_2k
+        right_of: culmer_small_dell
+    monitor_order:
       - culmer_small_dell
-    template: "dual_horizontal_monitors.conf.template"
-    variables:
-      left_monitor: "culmer_small_dell"
-      right_monitor: null
-      laptop_monitor: "culmer_dell_2k"
+      - culmer_dell_2k
 
   salesforce_vertical:
     description: "Monitor over laptop (Salesforce)"
-    monitors:
+    layout:
+      - monitor: framework_screen
+        position: origin
+      - monitor: salesforce_widescreen
+        above: framework_screen
+    monitor_order:
       - framework_screen
       - salesforce_widescreen
-    template: "vertical_monitors.conf.template"
-    variables:
-      upper_monitor: "salesforce_widescreen"
-      laptop_monitor: "framework_screen"
 
   default_laptop:
     description: "Default laptop mode"
-    monitors:
+    disable_others: true
+    layout:
+      - monitor: framework_screen
+        position: origin
+    monitor_order:
       - framework_screen
-    template: "laptop_default.conf.template"
-    variables:
-      laptop_monitor: "framework_screen"

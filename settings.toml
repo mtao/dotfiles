@@ -46,6 +46,10 @@ src = 'wezterm'
 src = 'mako'
 
 
+[[ClangFormat]]
+src = 'clang-format'
+type = 'dotfile'
+
 [[Clangd]]
 src = 'clangd'
 target = '${XDG_CONFIG_HOME}'
