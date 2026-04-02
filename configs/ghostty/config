@@ -1,0 +1,15 @@
+# Ghostty configuration
+
+# Font
+font-family = Inconsolata Nerd Font Mono
+font-size = 10
+freetype-load-flags = hinting
+
+theme = carbonfox
+
+# Appearance
+gtk-titlebar = false
+window-decoration = false
+
+# Behavior
+gtk-single-instance = true

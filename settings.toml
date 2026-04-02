@@ -42,6 +42,9 @@ src = 'waybar'
 [[Wezterm]]
 src = 'wezterm'
 
+[[Ghostty]]
+src = 'ghostty'
+
 [[Mako]]
 src = 'mako'
 
