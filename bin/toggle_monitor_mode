@@ -50,18 +50,30 @@ def get_connected_monitors() -> List[Monitor]:
     Forces a Hyprland reload first so that the monitor list reflects
     the actual physical connections (Hyprland can have a stale view).
     """
-    try:
-        subprocess.run(
-            ["hyprctl", "reload"],
-            check=True,
-            capture_output=True
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Warning: Failed to reload Hyprland before monitor query: {e}", file=sys.stderr)
-
     instance = Hyprland()
     monitors_json = instance.command_socket.send_command('monitors', flags=['-j'], args=['all'])
-    return [Monitor(m, instance) for m in json.loads(monitors_json)]
+    monitors = []
+    for m in json.loads(monitors_json):
+        try:
+            monitors.append(Monitor(m, instance))
+        except AttributeError:
+            # Workaround for hyprpy bug: Monitor.__init__ references
+            # data.mirror instead of data.mirror_of, causing an
+            # AttributeError.  Build a minimal stand-in from the raw
+            # JSON so the rest of the script still works.
+            from types import SimpleNamespace
+            mon = SimpleNamespace(
+                id=m.get('id', -1),
+                name=m.get('name', ''),
+                model=m.get('model', ''),
+                serial=m.get('serial', ''),
+                width=m.get('width', 0),
+                height=m.get('height', 0),
+                is_disabled=m.get('disabled', False),
+                mirror_of=None if m.get('mirrorOf', '') == '' else m.get('mirrorOf'),
+            )
+            monitors.append(mon)
+    return monitors
 
 
 def deduplicate_monitors(
