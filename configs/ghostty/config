@@ -5,7 +5,9 @@ font-family = Inconsolata Nerd Font Mono
 font-size = 10
 freetype-load-flags = hinting
 
-theme = carbonfox
+theme = "Monokai Pro Spectrum"
+# theme = carbonfox
+# theme = "GitHub-Light-High-Contrast"
 
 # Appearance
 gtk-titlebar = false
