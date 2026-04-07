@@ -36,7 +36,6 @@ monitors:
     serial: "111NTHMH2169"
     settings:
       mode: "3840x2160@60"
-      vrr: true
 
   home_gn950@95:
     name: "Home GN950"
