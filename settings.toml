@@ -56,3 +56,23 @@ type = 'dotfile'
 [[Clangd]]
 src = 'clangd'
 target = '${XDG_CONFIG_HOME}'
+
+# Cursor theme: Bibata-Original-Classic
+# https://github.com/ful1e5/Bibata_Cursor
+# The cursor theme files (~/.local/share/icons/Bibata-Original-Classic/)
+# are not tracked here — install manually or scp from another machine.
+# The entries below configure GTK and X11 fallback to use the theme.
+
+[[Cursor]]
+src = 'icons-default'
+dest = '~/.icons/default'
+
+[[GTK]]
+src = 'gtk-3.0'
+target = '${XDG_CONFIG_HOME}'
+# NOTE: gtk-xft-dpi is screen-specific; omitted from tracked file
+
+[[GTK]]
+src = 'gtk-4.0'
+target = '${XDG_CONFIG_HOME}'
+# NOTE: gtk-xft-dpi is screen-specific; omitted from tracked file
