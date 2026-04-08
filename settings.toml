@@ -32,6 +32,10 @@ target = '${XDG_CONFIG_HOME}'
 [[TMux]]
 src = 'tmux'
 
+[[TMuPower]]
+repo = 'https://github.com/wfxr/tmux-power.git'
+dest = '${XDG_CONFIG_HOME}/tmux/tmux-power'
+
 [[Hypr]]
 src = 'hypr'
 type = 'copy' # hyprland doesn't like copy
