@@ -1,4 +1,8 @@
 workspaces:
+  default_all:
+    description: "Enable all connected monitors with default settings"
+    catch_all: preferred
+
   home_three_monitors:
     description: "Home 3 monitor setup"
     layout:
@@ -39,6 +43,7 @@ workspaces:
       - office_lg
 
   home_horizontal:
+    enabled: false
     description: "Monitor next to laptop (Home GN950)"
     layout:
       - monitor: home_gn950@60
@@ -50,6 +55,7 @@ workspaces:
       - home_lg
 
   home_horizontal_right:
+    enabled: false
     description: "Monitor next to laptop (Home GN950)"
     layout:
       - monitor: framework_screen

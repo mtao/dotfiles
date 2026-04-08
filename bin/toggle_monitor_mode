@@ -154,6 +154,16 @@ def get_workspace_monitors(workspace_config: Dict) -> List[str]:
     return [entry['monitor'] for entry in workspace_config.get('layout', [])]
 
 
+def is_workspace_enabled(workspace_config: Dict) -> bool:
+    """Check if a workspace is enabled for toggle cycling and auto-detection.
+
+    Workspaces are enabled by default. Set ``enabled: false`` in the YAML
+    to exclude a workspace from the toggle cycle and auto-detection.
+    Disabled workspaces can still be selected explicitly via ``--mode``.
+    """
+    return workspace_config.get('enabled', True) is not False
+
+
 def find_matching_workspace(
     monitor_match_map: Dict[str, List[str]],
     workspaces: Dict[str, Dict]
@@ -164,6 +174,8 @@ def find_matching_workspace(
     monitor_match_map: Maps each physical monitor name to a list of all config IDs
                        it matched against. A single display can match multiple config
                        IDs (e.g. different mode profiles for the same hardware).
+
+    Only considers enabled workspaces. Disabled workspaces are skipped.
 
     Returns tuple of (workspace_name, workspace_config) or None if no match.
     """
@@ -180,6 +192,9 @@ def find_matching_workspace(
     )
 
     for workspace_name, workspace_config in sorted_workspaces:
+        if not is_workspace_enabled(workspace_config):
+            continue
+
         required_monitors = set(get_workspace_monitors(workspace_config))
 
         # Check if all required monitors for this workspace are satisfiable
@@ -302,37 +317,46 @@ def generate_config(
 
     Produces monitor lines, $monitorN aliases, an optional disable-others
     directive, and mirror directives for duplicate physical monitors.
+
+    If the workspace has a ``catch_all`` field (e.g. "preferred"), emits a
+    catch-all rule ``monitor = ,<catch_all>,auto,1`` that enables all
+    connected monitors with default settings, instead of per-monitor lines.
     """
     layout = workspace_config.get('layout', [])
     monitor_order = workspace_config.get('monitor_order', [])
     disable_others = workspace_config.get('disable_others', False)
-
-    positions = resolve_positions(layout, configured_monitors, monitor_objects)
+    catch_all = workspace_config.get('catch_all')
 
     lines: List[str] = []
 
-    # Disable all non-configured monitors when requested
-    if disable_others:
-        lines.append("monitor = ,disable")
+    if catch_all:
+        # Catch-all mode: enable all connected monitors with auto settings
+        lines.append(f"monitor = ,{catch_all},auto,1")
+    else:
+        positions = resolve_positions(layout, configured_monitors, monitor_objects)
 
-    # Emit monitor configuration lines
-    for entry in layout:
-        mid = entry['monitor']
-        if mid not in monitor_objects:
-            continue
-        monitor = monitor_objects[mid]
-        settings = get_monitor_settings(configured_monitors, mid)
-        x, y = positions[mid]
+        # Disable all non-configured monitors when requested
+        if disable_others:
+            lines.append("monitor = ,disable")
 
-        line = f"monitor = {monitor.name}, {settings['mode']},{x}x{y},{settings['scale']}"
-        if settings['vrr']:
-            line += ",vrr,1"
-        lines.append(line)
+        # Emit monitor configuration lines
+        for entry in layout:
+            mid = entry['monitor']
+            if mid not in monitor_objects:
+                continue
+            monitor = monitor_objects[mid]
+            settings = get_monitor_settings(configured_monitors, mid)
+            x, y = positions[mid]
 
-    # Emit $monitorN aliases for keybindings
-    for i, mid in enumerate(monitor_order):
-        if mid in monitor_objects:
-            lines.append(f"$monitor{i} = {monitor_objects[mid].name}")
+            line = f"monitor = {monitor.name}, {settings['mode']},{x}x{y},{settings['scale']}"
+            if settings['vrr']:
+                line += ",vrr,1"
+            lines.append(line)
+
+        # Emit $monitorN aliases for keybindings
+        for i, mid in enumerate(monitor_order):
+            if mid in monitor_objects:
+                lines.append(f"$monitor{i} = {monitor_objects[mid].name}")
 
     # Emit mirror directives for duplicate monitor entries
     if mirrors:
@@ -378,12 +402,13 @@ def apply_monitor_config(config_content: str):
 def list_workspaces(workspaces: Dict[str, Dict]) -> None:
     """Print a table of all available workspace modes."""
     print("Available monitor modes:")
-    print(f"  {'Name':<30} {'Description':<45} {'Monitors'}")
-    print(f"  {'-'*30} {'-'*45} {'-'*30}")
+    print(f"  {'Name':<30} {'Status':<10} {'Description':<45} {'Monitors'}")
+    print(f"  {'-'*30} {'-'*10} {'-'*45} {'-'*30}")
     for name, config in workspaces.items():
         description = config.get('description', '')
-        monitors = ', '.join(get_workspace_monitors(config))
-        print(f"  {name:<30} {description:<45} {monitors}")
+        monitors = ', '.join(get_workspace_monitors(config)) or config.get('catch_all', '')
+        status = 'enabled' if is_workspace_enabled(config) else 'disabled'
+        print(f"  {name:<30} {status:<10} {description:<45} {monitors}")
 
 
 def find_compatible_workspaces(
@@ -391,7 +416,8 @@ def find_compatible_workspaces(
     workspaces: Dict[str, Dict]
 ) -> List[Tuple[str, Dict]]:
     """
-    Find all workspace configurations compatible with connected monitors.
+    Find all enabled workspace configurations compatible with connected monitors.
+    Disabled workspaces are excluded from the toggle cycle.
     Returns a list of (workspace_name, workspace_config) sorted by monitor count descending.
     """
     all_possible_ids = set()
@@ -400,6 +426,8 @@ def find_compatible_workspaces(
 
     compatible = []
     for workspace_name, workspace_config in workspaces.items():
+        if not is_workspace_enabled(workspace_config):
+            continue
         required_monitors = set(get_workspace_monitors(workspace_config))
         if required_monitors.issubset(all_possible_ids):
             compatible.append((workspace_name, workspace_config))
@@ -511,6 +539,10 @@ def main():
     # Validate workspace configs reference existing monitors and have valid layouts
     errors = []
     for ws_name, ws_config in workspaces.items():
+        # Catch-all workspaces have no layout to validate
+        if ws_config.get('catch_all'):
+            continue
+
         layout = ws_config.get('layout', [])
         if not layout:
             errors.append(f"  Workspace '{ws_name}': missing or empty layout")
