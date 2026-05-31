@@ -42,6 +42,18 @@ workspaces:
       - framework_screen
       - office_lg
 
+  home_two_externals:
+    description: "Home external monitors only (no laptop)"
+    disable_others: true
+    layout:
+      - monitor: home_gn950@60
+        position: origin
+      - monitor: home_lg
+        right_of: home_gn950@60
+    monitor_order:
+      - home_gn950@60
+      - home_lg
+
   home_horizontal:
     enabled: false
     description: "Monitor next to laptop (Home GN950)"
